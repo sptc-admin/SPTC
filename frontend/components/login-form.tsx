@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { useAppToast } from "@/components/app-toast-provider"
 import { PageLoader } from "@/components/page-loader"
 import { getPublicApiUrl } from "@/lib/api-base"
+import { touchSessionActivity } from "@/lib/session-activity"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -54,6 +55,7 @@ export function LoginForm({
 
       const data = await response.json()
       localStorage.setItem("auth_user", JSON.stringify(data.user))
+      touchSessionActivity()
       showToast(data.message ?? "Login successful", "success")
       setTimeout(() => {
         router.push("/dashboard")

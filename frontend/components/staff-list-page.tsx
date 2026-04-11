@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { useAppToast } from "@/components/app-toast-provider"
+import { clearStoredAuth } from "@/lib/session-activity"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -205,7 +206,7 @@ export function StaffListPage() {
 
   function signOutIfSelf(id: number) {
     if (authUserId() !== id) return
-    localStorage.removeItem("auth_user")
+    clearStoredAuth()
     router.replace("/login")
   }
 

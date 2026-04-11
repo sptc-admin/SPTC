@@ -1,6 +1,7 @@
 "use client"
 
 import { PageLoader } from "@/components/page-loader"
+import { assertSessionFresh, clearStoredAuth } from "@/lib/session-activity"
 import { useRouter } from "next/navigation"
 import { ReactNode, useEffect, useState } from "react"
 
@@ -28,7 +29,7 @@ function getAuthUser(): AuthUser | null {
 
     return parsed
   } catch {
-    localStorage.removeItem("auth_user")
+    clearStoredAuth()
     return null
   }
 }
@@ -48,6 +49,11 @@ export function ProtectedRoute({
   useEffect(() => {
     const authUser = getAuthUser()
     if (!authUser) {
+      router.replace("/login")
+      return
+    }
+
+    if (!assertSessionFresh()) {
       router.replace("/login")
       return
     }

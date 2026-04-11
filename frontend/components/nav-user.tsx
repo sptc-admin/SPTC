@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { clearStoredAuth } from "@/lib/session-activity"
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -38,7 +39,7 @@ export function NavUser({
     user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase()
 
   const handleLogout = () => {
-    localStorage.removeItem("auth_user")
+    clearStoredAuth()
     router.push("/login")
     router.refresh()
   }
