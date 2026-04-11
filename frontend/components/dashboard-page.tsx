@@ -25,7 +25,7 @@ import type { Member } from "@/lib/member-types"
 import { fetchMembers } from "@/lib/members-api"
 import { fetchOperations } from "@/lib/operations-api"
 import type { Operation } from "@/lib/operation-types"
-import type { CsvExportSection } from "@/lib/csv-export"
+import { formatExportDateTime, type CsvExportSection } from "@/lib/csv-export"
 import { fetchSuspensions } from "@/lib/suspensions-api"
 import type { Suspension } from "@/lib/suspension-types"
 
@@ -252,7 +252,7 @@ export function DashboardPage() {
         title: "Dashboard — summary",
         kind: "keyValues",
         pairs: [
-          ["Exported at", new Date().toISOString()],
+          ["Exported at", formatExportDateTime()],
           ["Filter mode", dateFilterMode === "all" ? "All time" : "Month"],
           ...(dateFilterMode === "range"
             ? (() => {

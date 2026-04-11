@@ -50,6 +50,15 @@ import {
   updateOperation,
 } from "@/lib/operations-api"
 import type { Operation } from "@/lib/operation-types"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import {
+  formatExportDateTime,
+  formatExportDateTimeFromIso,
+} from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
 
 function formatReplacedMonthYear(iso: string): string {
   const d = new Date(iso)
@@ -79,6 +88,13 @@ function isBeforeTodayYmd(ymd: string): boolean {
 
 function registrationIsActive(item: Operation): boolean {
   return !isBeforeTodayYmd(item.mtopExpirationDate)
+}
+
+function documentUrlForExport(url: string | undefined): string {
+  const u = (url ?? "").trim()
+  if (!u) return ""
+  if (u.startsWith("data:")) return "[embedded]"
+  return u
 }
 
 function OperationDocumentPreview({ url }: { url: string }) {
@@ -146,6 +162,107 @@ export function OperationsListPage() {
       return true
     })
   }, [operations, filterBody, filterRegStatus])
+
+  const getOperationsExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filterBody.trim())
+      filterParts.push(`Body # contains "${filterBody.trim()}"`)
+    if (filterRegStatus !== "all") {
+      filterParts.push(
+        filterRegStatus === "active"
+          ? "MTOP registration: Active only"
+          : "MTOP registration: Expired only"
+      )
+    }
+
+    const mainHeaders = [
+      "Body #",
+      "MTOP registration",
+      "MTOP expiration",
+      "LTO expiration",
+      "MTOP document URL",
+      "LTO document URL",
+      "MTOP prior versions",
+      "LTO prior versions",
+      "Created at",
+      "Updated at",
+    ]
+
+    const mainRows = filteredOperations.map((item) => {
+      const active = registrationIsActive(item)
+      return [
+        item.bodyNumber,
+        active ? "Active" : "Expired",
+        item.mtopExpirationDate,
+        item.ltoExpirationDate,
+        documentUrlForExport(item.mtopDocumentUrl),
+        documentUrlForExport(item.ltoDocumentUrl),
+        String(item.mtopDocumentHistory?.length ?? 0),
+        String(item.ltoDocumentHistory?.length ?? 0),
+        formatExportDateTimeFromIso(item.createdAt),
+        formatExportDateTimeFromIso(item.updatedAt),
+      ]
+    })
+
+    const sections: CsvExportSection[] = [
+      {
+        title: "Operations — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredOperations.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all records)",
+          ],
+        ],
+      },
+      {
+        title: "Operations records",
+        kind: "table",
+        headers: mainHeaders,
+        rows: mainRows,
+      },
+    ]
+
+    const mtopHist: (string | number)[][] = []
+    const ltoHist: (string | number)[][] = []
+    for (const op of filteredOperations) {
+      for (const h of op.mtopDocumentHistory ?? []) {
+        mtopHist.push([
+          op.bodyNumber,
+          formatExportDateTimeFromIso(h.replacedAt),
+          documentUrlForExport(h.url),
+        ])
+      }
+      for (const h of op.ltoDocumentHistory ?? []) {
+        ltoHist.push([
+          op.bodyNumber,
+          formatExportDateTimeFromIso(h.replacedAt),
+          documentUrlForExport(h.url),
+        ])
+      }
+    }
+
+    if (mtopHist.length) {
+      sections.push({
+        title: "Prior MTOP documents (replaced)",
+        kind: "table",
+        headers: ["Body #", "Replaced at", "Document URL"],
+        rows: mtopHist,
+      })
+    }
+    if (ltoHist.length) {
+      sections.push({
+        title: "Prior LTO documents (replaced)",
+        kind: "table",
+        headers: ["Body #", "Replaced at", "Document URL"],
+        rows: ltoHist,
+      })
+    }
+
+    return sections
+  }, [filteredOperations, filterBody, filterRegStatus])
 
   const paginatedOperations = React.useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage
@@ -268,8 +385,19 @@ export function OperationsListPage() {
     }
   }
 
+  const operationsExportButton = (
+    <PageDataExportButton
+      fileBaseName="operations"
+      moduleName="operations"
+      disabled={loading || filteredOperations.length === 0}
+      getSections={getOperationsExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={operationsExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Upload MTOP and LTO documents with expiration dates per body number.
@@ -807,6 +935,7 @@ export function OperationsListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

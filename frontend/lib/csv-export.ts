@@ -9,6 +9,27 @@ export type CsvExportSection =
       rows: (string | number | null | undefined)[][]
     }
 
+function formatExportInstant(d: Date): string {
+  return d.toLocaleString("en-PH", {
+    dateStyle: "long",
+    timeStyle: "medium",
+  })
+}
+
+export function formatExportDateTime(d: Date = new Date()): string {
+  return formatExportInstant(d)
+}
+
+export function formatExportDateTimeFromIso(
+  raw: string | undefined | null
+): string {
+  const s = (raw ?? "").trim()
+  if (!s) return ""
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s
+  return formatExportInstant(d)
+}
+
 export function escapeCsvCell(value: unknown): string {
   if (value == null) return ""
   const s = String(value)

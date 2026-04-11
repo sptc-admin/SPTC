@@ -62,6 +62,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import {
+  formatExportDateTime,
+  formatExportDateTimeFromIso,
+} from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
+import type { Member } from "@/lib/member-types"
 
 const SUFFIX_OPTIONS = ["", "Jr.", "Sr.", "II", "III", "IV"] as const
 
@@ -263,6 +273,93 @@ export function DriverListPage() {
   }
 
   const hasActiveFilters = Object.values(filters).some((v) => v.trim().length > 0)
+
+  const getDriverExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filters.name.trim())
+      filterParts.push(`Name contains "${filters.name.trim()}"`)
+    if (filters.bodyNumber.trim())
+      filterParts.push(`Body # contains "${filters.bodyNumber.trim()}"`)
+    if (filters.age.trim())
+      filterParts.push(`Age contains "${filters.age.trim()}"`)
+    if (filters.contact.trim())
+      filterParts.push(`Contact contains "${filters.contact.trim()}"`)
+    if (filters.address.trim())
+      filterParts.push(`Address contains "${filters.address.trim()}"`)
+    if (filters.precinctNumber.trim())
+      filterParts.push(`Precinct # contains "${filters.precinctNumber.trim()}"`)
+
+    const headers = [
+      "Body number",
+      "Precinct number",
+      "Full name",
+      "First name",
+      "Middle name",
+      "Last name",
+      "Suffix",
+      "Birthday",
+      "Age",
+      "Province",
+      "City / municipality",
+      "Barangay",
+      "Street / unit / landmarks",
+      "Mobile (PH)",
+      "TIN",
+      "Operator",
+      "Created at",
+      "Updated at",
+    ] as const
+
+    const memberList = members as Member[]
+    const rows = filteredDrivers.map((d) => {
+      const linked = memberList.find((m) => m.bodyNumber === d.bodyNumber)
+      const linkedName = linked
+        ? displayFullName(linked.fullName as DriverFullName)
+        : ""
+      const age = computeAgeFromBirthDate(d.birthday)
+      return [
+        d.bodyNumber,
+        d.precinctNumber,
+        displayFullName(d.fullName),
+        d.fullName.first,
+        d.fullName.middle,
+        d.fullName.last,
+        d.fullName.suffix,
+        d.birthday,
+        age === null ? "" : String(age),
+        d.address.province,
+        d.address.city,
+        d.address.barangay,
+        d.address.line,
+        formatPhMobileDisplay(d.contactMobile10),
+        formatTinDisplay(d.tinDigits),
+        linkedName,
+        formatExportDateTimeFromIso(d.createdAt),
+        formatExportDateTimeFromIso(d.updatedAt),
+      ]
+    })
+
+    return [
+      {
+        title: "Drivers — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredDrivers.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all drivers)",
+          ],
+        ],
+      },
+      {
+        title: "Driver details",
+        kind: "table",
+        headers: [...headers],
+        rows,
+      },
+    ]
+  }, [filteredDrivers, filters, members])
 
   React.useEffect(() => {
     let cancelled = false
@@ -484,8 +581,19 @@ export function DriverListPage() {
     setSaveConfirmOpen(true)
   }
 
+  const driverExportButton = (
+    <PageDataExportButton
+      fileBaseName="drivers"
+      moduleName="drivers"
+      disabled={listLoading || filteredDrivers.length === 0}
+      getSections={getDriverExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={driverExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
@@ -1506,6 +1614,7 @@ export function DriverListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

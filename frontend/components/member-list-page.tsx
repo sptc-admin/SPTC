@@ -81,6 +81,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import { formatExportDateTime } from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
 
 const SUFFIX_OPTIONS = ["", "Jr.", "Sr.", "II", "III", "IV"] as const
 
@@ -404,6 +410,128 @@ export function MemberListPage() {
 
   const hasActiveFilters = Object.values(filters).some((v) => v.trim().length > 0)
 
+  const getMemberExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filters.name.trim())
+      filterParts.push(`Name contains "${filters.name.trim()}"`)
+    if (filters.bodyNumber.trim())
+      filterParts.push(`Body # contains "${filters.bodyNumber.trim()}"`)
+    if (filters.age.trim())
+      filterParts.push(`Age contains "${filters.age.trim()}"`)
+    if (filters.contact.trim())
+      filterParts.push(`Contact contains "${filters.contact.trim()}"`)
+    if (filters.address.trim())
+      filterParts.push(`Address contains "${filters.address.trim()}"`)
+    if (filters.precinctNumber.trim())
+      filterParts.push(`Precinct # contains "${filters.precinctNumber.trim()}"`)
+
+    const headers = [
+      "Body #",
+      "Precinct #",
+      "Full name",
+      "First name",
+      "Middle name",
+      "Last name",
+      "Suffix",
+      "Birthday",
+      "Age",
+      "Province",
+      "City / municipality",
+      "Barangay",
+      "Street / unit / landmarks",
+      "Mobile (PH)",
+      "TIN",
+      "Drivers count",
+      "Driver names",
+      "Regular loan",
+      "Emergency loan",
+      "Savings",
+      "Butaw",
+      "Arkilahan (latest name)",
+      "Arkilahan (latest due)",
+      "Lipatan transfers",
+    ] as const
+
+    const rows = filteredMembers.map((m) => {
+      const afterIso = maxLipatanTransferredAt(m.lipatanHistory)
+      const snap = getMemberFinancialSnapshot(
+        m.id,
+        loans,
+        savingsRecords,
+        butawRecords,
+        {
+          carriedShareCapital: m.financials?.shareCapital ?? 0,
+          financialRecordsAfterIso: afterIso,
+        }
+      )
+      const memberDrivers = drivers.filter((d) => d.bodyNumber === m.bodyNumber)
+      const driverNames = memberDrivers
+        .map((d) => displayFullName(d.fullName))
+        .join("; ")
+      const memberArk = [...arkilahanRecords]
+        .filter((r) => r.bodyNumber === m.bodyNumber)
+        .sort((a, b) => b.dueDate.localeCompare(a.dueDate))
+      const ark0 = memberArk[0]
+      const age = computeAgeFromBirthDate(m.birthday)
+      return [
+        m.bodyNumber,
+        m.precinctNumber,
+        displayFullName(m.fullName),
+        m.fullName.first,
+        m.fullName.middle,
+        m.fullName.last,
+        m.fullName.suffix,
+        m.birthday,
+        age === null ? "" : String(age),
+        m.address.province,
+        m.address.city,
+        m.address.barangay,
+        m.address.line,
+        formatPhMobileDisplay(m.contactMobile10),
+        formatTinDisplay(m.tinDigits),
+        String(driverCounts[m.bodyNumber] ?? memberDrivers.length),
+        driverNames,
+        snap.regularLoan,
+        snap.emergencyLoan,
+        snap.savings,
+        snap.butaw,
+        ark0?.name ?? "",
+        ark0?.dueDate ?? "",
+        String(m.lipatanHistory?.length ?? 0),
+      ]
+    })
+
+    return [
+      {
+        title: "Members — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredMembers.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all members)",
+          ],
+        ],
+      },
+      {
+        title: "Member details",
+        kind: "table",
+        headers: [...headers],
+        rows,
+      },
+    ]
+  }, [
+    filteredMembers,
+    filters,
+    loans,
+    savingsRecords,
+    butawRecords,
+    arkilahanRecords,
+    drivers,
+    driverCounts,
+  ])
+
   React.useEffect(() => {
     let cancelled = false
     setAddressLoading(true)
@@ -631,8 +759,19 @@ export function MemberListPage() {
     setSaveConfirmOpen(true)
   }
 
+  const memberExportButton = (
+    <PageDataExportButton
+      fileBaseName="members"
+      moduleName="members"
+      disabled={listLoading || filteredMembers.length === 0}
+      getSections={getMemberExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={memberExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
@@ -1886,6 +2025,7 @@ export function MemberListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

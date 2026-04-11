@@ -28,6 +28,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import {
+  formatExportDateTime,
+  formatExportDateTimeFromIso,
+} from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
+import { formatPhMobileDisplay } from "@/lib/member-utils"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -62,6 +72,10 @@ function displayDriverName(driver: Driver): string {
     .filter(Boolean)
     .join(" ")
     .trim()
+}
+
+function suspensionStatusLabel(status: SuspensionStatus): string {
+  return status === "active" ? "Suspended" : "Cleared"
 }
 
 export function SuspensionListPage() {
@@ -109,6 +123,75 @@ export function SuspensionListPage() {
     })
   }, [suspensions, filters])
   const hasActiveFilters = Object.values(filters).some((v) => v.trim().length > 0)
+
+  const getSuspensionExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filters.driver.trim())
+      filterParts.push(`Driver contains "${filters.driver.trim()}"`)
+    if (filters.bodyNumber.trim())
+      filterParts.push(`Body # contains "${filters.bodyNumber.trim()}"`)
+    if (filters.startFrom.trim())
+      filterParts.push(`Start date from ${filters.startFrom}`)
+    if (filters.startTo.trim())
+      filterParts.push(`Start date to ${filters.startTo}`)
+    if (filters.endFrom.trim())
+      filterParts.push(`End date from ${filters.endFrom}`)
+    if (filters.endTo.trim())
+      filterParts.push(`End date to ${filters.endTo}`)
+    if (filters.status.trim())
+      filterParts.push(
+        filters.status === "active"
+          ? "Status: Suspended"
+          : "Status: Cleared"
+      )
+
+    const headers = [
+      "Driver name",
+      "Body #",
+      "Start date",
+      "End date",
+      "Status",
+      "Driver mobile (PH)",
+      "Created at",
+      "Updated at",
+    ]
+
+    const rows = filteredSuspensions.map((item) => {
+      const drv = drivers.find((d) => d.id === item.driverId)
+      return [
+        item.driverName,
+        item.bodyNumber,
+        formatExportDateTimeFromIso(item.startDate),
+        formatExportDateTimeFromIso(item.endDate),
+        suspensionStatusLabel(item.status),
+        drv ? formatPhMobileDisplay(drv.contactMobile10) : "",
+        formatExportDateTimeFromIso(item.createdAt),
+        formatExportDateTimeFromIso(item.updatedAt),
+      ]
+    })
+
+    return [
+      {
+        title: "Suspensions — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredSuspensions.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all records)",
+          ],
+        ],
+      },
+      {
+        title: "Suspension records",
+        kind: "table",
+        headers,
+        rows,
+      },
+    ]
+  }, [filteredSuspensions, filters, drivers])
+
   const paginatedSuspensions = React.useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage
     return filteredSuspensions.slice(start, start + itemsPerPage)
@@ -244,8 +327,19 @@ export function SuspensionListPage() {
     setCurrentPage(1)
   }
 
+  const suspensionExportButton = (
+    <PageDataExportButton
+      fileBaseName="suspensions"
+      moduleName="suspensions"
+      disabled={loading || filteredSuspensions.length === 0}
+      getSections={getSuspensionExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={suspensionExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Suspend drivers with suspended/cleared status and full history log.
@@ -601,6 +695,7 @@ export function SuspensionListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

@@ -13,6 +13,7 @@ import {
 import {
   computeAgeFromBirthDate,
   formatPhLocalSpaced,
+  formatPhMobileDisplay,
   formatTinDisplay,
   isValidPhMobile10,
   isValidTin12,
@@ -69,6 +70,15 @@ import {
   type MemberFullName,
 } from "@/lib/member-types"
 import { LIPATAN_SHARE_CAPITAL_DEDUCTION } from "@/lib/lipatan-constants"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import {
+  formatExportDateTime,
+  formatExportDateTimeFromIso,
+} from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
 
 const LIPATAN_BLOCKED_BY_LOANS_MSG =
   "This body has an outstanding regular or emergency loan. Lipatan is disabled until the balance is fully settled."
@@ -195,6 +205,34 @@ function buildLipatanRows(members: Member[]): LipatanTableRow[] {
       new Date(a.transferredAt).getTime()
   )
   return rows
+}
+
+function lipatanEntryForRow(
+  members: Member[],
+  row: LipatanTableRow
+): { member: Member; entry: LipatanHistoryEntry } | null {
+  const member = members.find((m) => m.bodyNumber === row.bodyNumber)
+  if (!member?.lipatanHistory?.length) return null
+  const entry = member.lipatanHistory.find(
+    (h) => h.transferredAt === row.transferredAt
+  )
+  if (!entry) return null
+  return { member, entry }
+}
+
+function formatPhpForExport(n: number): string {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(n) ? n : 0)
+}
+
+function documentUrlForExportLipatan(url: string | undefined): string {
+  const u = (url ?? "").trim()
+  if (!u) return ""
+  if (u.startsWith("data:")) return "[embedded]"
+  return u
 }
 
 const ITEMS_PER_PAGE = 10
@@ -415,6 +453,100 @@ export function LipatanPage() {
     setCurrentPage(1)
   }, [filters.name, filters.bodyNumber])
 
+  const getLipatanExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filters.name.trim())
+      filterParts.push(`Name contains "${filters.name.trim()}"`)
+    if (filters.bodyNumber.trim())
+      filterParts.push(`Body # contains "${filters.bodyNumber.trim()}"`)
+
+    const headers = [
+      "Body #",
+      "Transferred at",
+      "Date (local)",
+      "From",
+      "To",
+      "Share capital deducted",
+      "Document URL",
+      "Member name (current record)",
+      "Previous operator — full name",
+      "Previous operator — birthday",
+      "Previous operator — mobile",
+      "Previous operator — TIN",
+      "Previous operator — address",
+      "Previous operator — precinct",
+    ]
+
+    const rows = filteredLipatanRows.map((row) => {
+      const found = lipatanEntryForRow(members, row)
+      if (!found) {
+        return [
+          row.bodyNumber,
+          formatExportDateTimeFromIso(row.transferredAt),
+          formatHistoryDate(row.transferredAt),
+          row.fromName,
+          row.toName,
+          "",
+          documentUrlForExportLipatan(row.documentUrl),
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]
+      }
+      const { member, entry } = found
+      const prev = entry.previousPersonal
+      const addr = [
+        prev.address.line,
+        prev.address.barangay,
+        prev.address.city,
+        prev.address.province,
+      ]
+        .filter(Boolean)
+        .join(", ")
+      return [
+        row.bodyNumber,
+        formatExportDateTimeFromIso(row.transferredAt),
+        formatHistoryDate(row.transferredAt),
+        row.fromName,
+        row.toName,
+        formatPhpForExport(entry.shareCapitalDeducted),
+        documentUrlForExportLipatan(entry.documentUrl ?? row.documentUrl),
+        displayFullName(member.fullName),
+        displayFullName(prev.fullName),
+        prev.birthday,
+        formatPhMobileDisplay(prev.contactMobile10),
+        formatTinDisplay(prev.tinDigits),
+        addr,
+        prev.precinctNumber ?? "",
+      ]
+    })
+
+    return [
+      {
+        title: "Lipatan — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredLipatanRows.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all records)",
+          ],
+        ],
+      },
+      {
+        title: "Lipatan records",
+        kind: "table",
+        headers,
+        rows,
+      },
+    ]
+  }, [filteredLipatanRows, filters, members])
+
   const historyRows = sheetMember
     ? [...(sheetMember.lipatanHistory ?? [])].reverse()
     : []
@@ -548,8 +680,19 @@ export function LipatanPage() {
     }
   }
 
+  const lipatanExportButton = (
+    <PageDataExportButton
+      fileBaseName="lipatan"
+      moduleName="lipatan"
+      disabled={loading || filteredLipatanRows.length === 0}
+      getSections={getLipatanExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={lipatanExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-sm text-muted-foreground max-w-3xl">
           View lipatan history and record when a franchise (body) is transferred
@@ -1204,6 +1347,7 @@ export function LipatanPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }

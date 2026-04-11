@@ -39,6 +39,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import {
+  formatExportDateTime,
+  formatExportDateTimeFromIso,
+} from "@/lib/csv-export"
+import { SiteHeader } from "@/components/site-header"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -54,6 +63,31 @@ const SUFFIX_OPTIONS = ["", "Jr.", "Sr.", "II", "III", "IV"] as const
 
 const selectClassName =
   "flex h-9 w-full cursor-pointer rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed"
+
+function memberDisplayName(m: Member): string {
+  const n = m.fullName
+  const first = (n.first || "").trim()
+  const last = (n.last || "").trim()
+  if (!last && !first) return "—"
+  const head = last ? `${last}, ${first}`.trim() : first
+  const suf = (n.suffix || "").trim()
+  return suf ? `${head} ${suf}`.trim() : head
+}
+
+function formatArkilahanFee(n: number): string {
+  return n.toLocaleString("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 2,
+  })
+}
+
+function documentUrlForExport(url: string | undefined): string {
+  const u = (url ?? "").trim()
+  if (!u) return ""
+  if (u.startsWith("data:")) return "[embedded]"
+  return u
+}
 
 export function ArkilahanListPage() {
   const { showToast } = useAppToast()
@@ -128,6 +162,79 @@ export function ArkilahanListPage() {
     })
   }, [entries, filters])
   const hasActiveFilters = Object.values(filters).some((value) => value.trim().length > 0)
+
+  const getArkilahanExportSections = React.useCallback((): CsvExportSection[] => {
+    const filterParts: string[] = []
+    if (filters.dateFrom.trim())
+      filterParts.push(`Record date from ${filters.dateFrom}`)
+    if (filters.dateTo.trim())
+      filterParts.push(`Record date to ${filters.dateTo}`)
+    if (filters.bodyNumber.trim())
+      filterParts.push(`Body # contains "${filters.bodyNumber.trim()}"`)
+    if (filters.name.trim())
+      filterParts.push(`Name contains "${filters.name.trim()}"`)
+    if (filters.fee.trim())
+      filterParts.push(`Fee contains "${filters.fee.trim()}"`)
+    if (filters.dueDateFrom.trim())
+      filterParts.push(`Due date from ${filters.dueDateFrom}`)
+    if (filters.dueDateTo.trim())
+      filterParts.push(`Due date to ${filters.dueDateTo}`)
+    if (filters.terms.trim())
+      filterParts.push(`Terms contains "${filters.terms.trim()}"`)
+
+    const headers = [
+      "Record date",
+      "Body #",
+      "Name (on contract)",
+      "Operator",
+      "Fee",
+      "Due date",
+      "Term value",
+      "Term unit",
+      "Contract URL",
+      "Created at",
+      "Updated at",
+    ]
+
+    const rows = filteredEntries.map((item) => {
+      const linked = members.find((m) => m.bodyNumber === item.bodyNumber)
+      return [
+        item.date,
+        item.bodyNumber,
+        item.name,
+        linked ? memberDisplayName(linked) : "",
+        formatArkilahanFee(item.fee),
+        item.dueDate,
+        String(item.termValue),
+        item.termUnit,
+        documentUrlForExport(item.documentUrl),
+        formatExportDateTimeFromIso(item.createdAt),
+        formatExportDateTimeFromIso(item.updatedAt),
+      ]
+    })
+
+    return [
+      {
+        title: "Arkilahan — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(filteredEntries.length)],
+          [
+            "Filters",
+            filterParts.length ? filterParts.join("; ") : "None (all records)",
+          ],
+        ],
+      },
+      {
+        title: "Arkilahan records",
+        kind: "table",
+        headers,
+        rows,
+      },
+    ]
+  }, [filteredEntries, filters, members])
+
   const paginatedEntries = React.useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage
     return filteredEntries.slice(start, start + itemsPerPage)
@@ -294,8 +401,19 @@ export function ArkilahanListPage() {
     setCurrentPage(1)
   }
 
+  const arkilahanExportButton = (
+    <PageDataExportButton
+      fileBaseName="arkilahan"
+      moduleName="arkilahan"
+      disabled={loading || filteredEntries.length === 0}
+      getSections={getArkilahanExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={arkilahanExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Manage Arkila records with fee, due date, and terms.
@@ -814,7 +932,8 @@ export function ArkilahanListPage() {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }
 
