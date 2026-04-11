@@ -99,7 +99,20 @@ type ViewMember = {
   memberName: string
 }
 
-export function SavingsRecordsSection() {
+export type SavingsRecordsExportSnapshot = {
+  records: SavingsRecord[]
+  filterBody: string
+  filterName: string
+  loading: boolean
+}
+
+type SavingsRecordsSectionProps = {
+  onExportSnapshot?: (snap: SavingsRecordsExportSnapshot) => void
+}
+
+export function SavingsRecordsSection({
+  onExportSnapshot,
+}: SavingsRecordsSectionProps) {
   const [records, setRecords] = React.useState<SavingsRecord[]>([])
   const [recordsLoading, setRecordsLoading] = React.useState(true)
   const [recordsError, setRecordsError] = React.useState<string | null>(null)
@@ -127,6 +140,15 @@ export function SavingsRecordsSection() {
   React.useEffect(() => {
     loadRecords()
   }, [loadRecords])
+
+  React.useEffect(() => {
+    onExportSnapshot?.({
+      records,
+      filterBody,
+      filterName,
+      loading: recordsLoading,
+    })
+  }, [records, filterBody, filterName, recordsLoading, onExportSnapshot])
 
   function openAddSavings() {
     setAddKey((k) => k + 1)

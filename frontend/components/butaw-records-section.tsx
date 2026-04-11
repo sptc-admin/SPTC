@@ -174,7 +174,20 @@ type ViewMember = {
   memberName: string
 }
 
-export function ButawRecordsSection() {
+export type ButawRecordsExportSnapshot = {
+  records: ButawRecord[]
+  filterBody: string
+  filterName: string
+  loading: boolean
+}
+
+type ButawRecordsSectionProps = {
+  onExportSnapshot?: (snap: ButawRecordsExportSnapshot) => void
+}
+
+export function ButawRecordsSection({
+  onExportSnapshot,
+}: ButawRecordsSectionProps) {
   const [records, setRecords] = React.useState<ButawRecord[]>([])
   const [members, setMembers] = React.useState<Member[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -206,6 +219,15 @@ export function ButawRecordsSection() {
   React.useEffect(() => {
     loadRecords()
   }, [loadRecords])
+
+  React.useEffect(() => {
+    onExportSnapshot?.({
+      records,
+      filterBody,
+      filterName,
+      loading,
+    })
+  }, [records, filterBody, filterName, loading, onExportSnapshot])
 
   function openAdd(forMember: ViewMember | null) {
     setAddPrefillMember(forMember)
