@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, Eye, Wallet } from "lucide-react"
+import { ChevronLeft, ChevronRight, Eye, Plus, Wallet } from "lucide-react"
 
 import { AddButawRecord } from "@/components/add-butaw-record"
 import { Button } from "@/components/ui/button"
@@ -271,6 +271,21 @@ export function ButawRecordsSection() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          Record butaw by member and covered months. Totals below combine
+          payments with any carried share capital; use View for the entry log.
+        </p>
+        <Button
+          type="button"
+          onClick={() => openAdd(null)}
+          className="shrink-0 gap-2 bg-black text-white hover:bg-black/90"
+        >
+          <Plus className="size-4" />
+          Add butaw
+        </Button>
+      </div>
+
       <div className="space-y-3">
         <h3 className="text-sm font-semibold">Butaw by member</h3>
         {loading ? (
@@ -278,20 +293,9 @@ export function ButawRecordsSection() {
         ) : error ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : memberTotals.length === 0 ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              No butaw activity yet. Add a first payment for a member:
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => openAdd(null)}
-              className="gap-2 bg-black text-white hover:bg-black/90"
-            >
-              <Wallet className="size-4" />
-              Payment
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            No butaw activity yet. Use Add butaw above to record a payment.
+          </p>
         ) : (
           <div className="space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
