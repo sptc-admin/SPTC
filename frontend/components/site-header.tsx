@@ -1,15 +1,22 @@
 "use client"
 
-import { usePathname } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import type { ReactNode } from "react"
+import { Suspense } from "react"
 
-import { titleForPath } from "@/lib/app-nav"
+import { financialRecordsSiteTitle, titleForPath } from "@/lib/app-nav"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
+function FinancialRecordsHeaderTitle() {
+  const searchParams = useSearchParams()
+  return <>{financialRecordsSiteTitle(searchParams.get("tab"))}</>
+}
+
 export function SiteHeader({ trailing }: { trailing?: ReactNode }) {
   const pathname = usePathname() ?? ""
-  const title = titleForPath(pathname)
+  const defaultTitle = titleForPath(pathname)
+  const isFinancialRecords = pathname === "/financial-records"
 
   return (
     <header className="group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear">
@@ -19,7 +26,15 @@ export function SiteHeader({ trailing }: { trailing?: ReactNode }) {
           orientation="vertical"
           className="mx-2 shrink-0 data-[orientation=vertical]:h-4"
         />
-        <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
+        <h1 className="min-w-0 truncate text-base font-medium">
+          {isFinancialRecords ? (
+            <Suspense fallback={financialRecordsSiteTitle(null)}>
+              <FinancialRecordsHeaderTitle />
+            </Suspense>
+          ) : (
+            defaultTitle
+          )}
+        </h1>
         {trailing ? (
           <div className="ml-auto flex shrink-0 items-center gap-2">{trailing}</div>
         ) : null}

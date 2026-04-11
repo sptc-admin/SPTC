@@ -37,3 +37,9 @@ export const pageTitles: Record<string, string> = Object.fromEntries([
 export function titleForPath(pathname: string): string {
   return pageTitles[pathname] ?? "SPTC"
 }
+
+export function financialRecordsSiteTitle(tab: string | null): string {
+  const section =
+    tab === "savings" ? "Savings" : tab === "butaw" ? "Butaw" : "Loan"
+  return `Financial Records - ${section}`
+}

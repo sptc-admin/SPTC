@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Plus } from "lucide-react"
-import { useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { AddEmergencyLoan } from "@/components/add-emergency-loan"
 import { AddRegularLoan } from "@/components/add-regular-loan"
@@ -26,6 +26,8 @@ const loanTypePillClass =
   "rounded-md border px-3 py-2 text-sm font-medium transition-colors"
 
 export function FinancialRecordsPage() {
+  const router = useRouter()
+  const pathname = usePathname() ?? ""
   const searchParams = useSearchParams()
   const requestedTab = searchParams.get("tab")
   const requestedLoanType = searchParams.get("loanType")
@@ -71,6 +73,18 @@ export function FinancialRecordsPage() {
     setAddEmergencyOpen(false)
   }
 
+  function goToMainTab(id: MainTab) {
+    setMainTab(id)
+    const params = new URLSearchParams(searchParams.toString())
+    if (id === "loan") {
+      params.delete("tab")
+    } else {
+      params.set("tab", id)
+    }
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <Card>
@@ -95,7 +109,7 @@ export function FinancialRecordsPage() {
                 type="button"
                 role="tab"
                 aria-selected={mainTab === id}
-                onClick={() => setMainTab(id)}
+                onClick={() => goToMainTab(id)}
                 className={cn(
                   "flex-1 rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-all sm:py-3",
                   mainTab === id
