@@ -155,7 +155,7 @@ export function DriverListPage() {
     age: "",
     contact: "",
     address: "",
-    tin: "",
+    precinctNumber: "",
   })
   const itemsPerPage = 10
   const hasOpenedFromUrl = React.useRef(false)
@@ -236,15 +236,16 @@ export function DriverListPage() {
         .filter(Boolean)
         .join(", ")
         .toLowerCase()
-      const tin = formatTinDisplay(d.tinDigits).toLowerCase()
-      
+      const precinct = (d.precinctNumber || "").toLowerCase()
+
       return (
         (!filters.name || fullName.includes(filters.name.toLowerCase())) &&
         (!filters.bodyNumber || bodyNumber.includes(filters.bodyNumber.toLowerCase())) &&
         (!filters.age || age.includes(filters.age)) &&
         (!filters.contact || contact.includes(filters.contact.toLowerCase())) &&
         (!filters.address || address.includes(filters.address.toLowerCase())) &&
-        (!filters.tin || tin.includes(filters.tin.toLowerCase()))
+        (!filters.precinctNumber ||
+          precinct.includes(filters.precinctNumber.toLowerCase()))
       )
     })
   }, [drivers, filters])
@@ -256,7 +257,7 @@ export function DriverListPage() {
       age: "",
       contact: "",
       address: "",
-      tin: "",
+      precinctNumber: "",
     })
     setCurrentPage(1)
   }
@@ -572,10 +573,10 @@ export function DriverListPage() {
                 className="text-sm"
               />
               <Input
-                placeholder="TIN"
-                value={filters.tin}
+                placeholder="Precinct #"
+                value={filters.precinctNumber}
                 onChange={(e) => {
-                  setFilters((f) => ({ ...f, tin: e.target.value }))
+                  setFilters((f) => ({ ...f, precinctNumber: e.target.value }))
                   setCurrentPage(1)
                 }}
                 className="text-sm"

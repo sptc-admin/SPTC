@@ -289,7 +289,7 @@ export function MemberListPage() {
     age: "",
     contact: "",
     address: "",
-    tin: "",
+    precinctNumber: "",
   })
   const itemsPerPage = 10
 
@@ -376,15 +376,16 @@ export function MemberListPage() {
         .filter(Boolean)
         .join(", ")
         .toLowerCase()
-      const tin = formatTinDisplay(m.tinDigits).toLowerCase()
-      
+      const precinct = (m.precinctNumber || "").toLowerCase()
+
       return (
         (!filters.name || fullName.includes(filters.name.toLowerCase())) &&
         (!filters.bodyNumber || bodyNumber.includes(filters.bodyNumber.toLowerCase())) &&
         (!filters.age || age.includes(filters.age)) &&
         (!filters.contact || contact.includes(filters.contact.toLowerCase())) &&
         (!filters.address || address.includes(filters.address.toLowerCase())) &&
-        (!filters.tin || tin.includes(filters.tin.toLowerCase()))
+        (!filters.precinctNumber ||
+          precinct.includes(filters.precinctNumber.toLowerCase()))
       )
     })
   }, [members, filters])
@@ -396,7 +397,7 @@ export function MemberListPage() {
       age: "",
       contact: "",
       address: "",
-      tin: "",
+      precinctNumber: "",
     })
     setCurrentPage(1)
   }
@@ -719,10 +720,10 @@ export function MemberListPage() {
                 className="text-sm"
               />
               <Input
-                placeholder="TIN"
-                value={filters.tin}
+                placeholder="Precinct #"
+                value={filters.precinctNumber}
                 onChange={(e) => {
-                  setFilters((f) => ({ ...f, tin: e.target.value }))
+                  setFilters((f) => ({ ...f, precinctNumber: e.target.value }))
                   setCurrentPage(1)
                 }}
                 className="text-sm"
