@@ -45,6 +45,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import {
+  PageDataExportButton,
+  type CsvExportSection,
+} from "@/components/page-data-export"
+import { SiteHeader } from "@/components/site-header"
+import { formatExportDateTime } from "@/lib/csv-export"
 import { cn } from "@/lib/utils"
 import type { StaffRole, StaffUser } from "@/lib/user-types"
 import {
@@ -136,6 +142,42 @@ export function StaffListPage() {
   React.useEffect(() => {
     load()
   }, [load])
+
+  const getStaffExportSections = React.useCallback((): CsvExportSection[] => {
+    const rows = [...users]
+      .sort((a, b) => a.id - b.id)
+      .map((u) => [
+        u.firstname ?? "",
+        u.lastname ?? "",
+        displayName(u),
+        u.username,
+        u.role,
+        u.enabled ? "Active" : "Disabled",
+      ])
+    return [
+      {
+        title: "Staff — export summary",
+        kind: "keyValues",
+        pairs: [
+          ["Exported at", formatExportDateTime()],
+          ["Row count", String(rows.length)],
+        ],
+      },
+      {
+        title: "Staff & admins",
+        kind: "table",
+        headers: [
+          "First name",
+          "Last name",
+          "Display name",
+          "Username",
+          "Role",
+          "Status",
+        ],
+        rows,
+      },
+    ]
+  }, [users])
 
   function resetForm() {
     setRole("staff")
@@ -270,8 +312,19 @@ export function StaffListPage() {
     }
   }
 
+  const staffExportButton = (
+    <PageDataExportButton
+      fileBaseName="staff"
+      moduleName="staff"
+      disabled={loading || users.length === 0}
+      getSections={getStaffExportSections}
+    />
+  )
+
   return (
-    <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
+    <>
+      <SiteHeader trailing={staffExportButton} />
+      <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Manage admin and staff accounts. Passwords are stored securely on the server.
@@ -619,6 +672,7 @@ export function StaffListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   )
 }
