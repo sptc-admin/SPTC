@@ -2,7 +2,20 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ChevronLeft, ChevronRight, Download, Eye, Filter, Pencil, Plus, Search, Trash2, User, X } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  FileUp,
+  Filter,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  User,
+  X,
+} from "lucide-react"
 
 import type {
   Member,
@@ -19,8 +32,12 @@ import {
   formatPhLocalSpaced,
   formatPhMobileDisplay,
   formatTinDisplay,
+  getBodyNumberFormatError,
+  getMemberFullNameFormatError,
   isValidPhMobile10,
   isValidTin12,
+  normalizeBodyNumber,
+  normalizeNamePart,
   normalizePhMobile10,
   normalizeTinDigits,
 } from "@/lib/member-utils"
@@ -86,6 +103,13 @@ import {
   type CsvExportSection,
 } from "@/components/page-data-export"
 import { formatExportDateTime } from "@/lib/csv-export"
+import {
+  downloadMemberImportTemplate,
+  parseMemberImportRows,
+  type MemberImportRowError,
+} from "@/lib/member-import"
+import { createAuditLogEvent } from "@/lib/audit-logs-api"
+import { formatAuthActorLabel } from "@/lib/auth-actor"
 import { SiteHeader } from "@/components/site-header"
 
 const SUFFIX_OPTIONS = ["", "Jr.", "Sr.", "II", "III", "IV"] as const
@@ -315,6 +339,16 @@ export function MemberListPage() {
   const [cities, setCities] = React.useState<AddressOption[]>([])
   const [barangays, setBarangays] = React.useState<AddressOption[]>([])
   const [addressLoading, setAddressLoading] = React.useState(false)
+
+  const memberImportInputRef = React.useRef<HTMLInputElement>(null)
+  const [memberImportBusy, setMemberImportBusy] = React.useState(false)
+  const [memberImportReportOpen, setMemberImportReportOpen] =
+    React.useState(false)
+  const [memberImportReport, setMemberImportReport] = React.useState<{
+      created: number
+      parseErrors: MemberImportRowError[]
+      apiFailures: { excelRow: number; message: string }[]
+    } | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -686,17 +720,36 @@ export function MemberListPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!bodyNumber.trim()) {
-      showToast("Body / Prangkisa number is required.", "error")
+    const bodyFmt = getBodyNumberFormatError(bodyNumber)
+    if (bodyFmt) {
+      showToast(bodyFmt, "error")
+      return
+    }
+    const bn = normalizeBodyNumber(bodyNumber)
+    if (
+      members.some(
+        (m) =>
+          m.id !== editingId &&
+          normalizeBodyNumber(m.bodyNumber).toLowerCase() === bn.toLowerCase()
+      )
+    ) {
+      showToast("This Body # is already used by another member.", "error")
       return
     }
     if (!precinctNumber.trim()) {
       showToast("Precinct number is required.", "error")
       return
     }
-    if (!fullName.first.trim() || !fullName.last.trim()) {
-      showToast("First and last name are required.", "error")
+    const nameErr = getMemberFullNameFormatError(fullName)
+    if (nameErr) {
+      showToast(nameErr, "error")
       return
+    }
+    const fullNameNorm = {
+      first: normalizeNamePart(fullName.first),
+      middle: normalizeNamePart(fullName.middle),
+      last: normalizeNamePart(fullName.last),
+      suffix: normalizeNamePart(fullName.suffix),
     }
     if (!birthday) {
       showToast("Birthday is required.", "error")
@@ -735,14 +788,9 @@ export function MemberListPage() {
 
     const financials = financialsDisplay
     const basePayload: MemberCreatePayload = {
-      bodyNumber: bodyNumber.trim(),
+      bodyNumber: bn,
       precinctNumber: precinctNumber.trim(),
-      fullName: {
-        first: fullName.first.trim(),
-        middle: fullName.middle.trim(),
-        last: fullName.last.trim(),
-        suffix: fullName.suffix.trim(),
-      },
+      fullName: fullNameNorm,
       birthday,
       address: {
         province: address.province,
@@ -759,18 +807,134 @@ export function MemberListPage() {
     setSaveConfirmOpen(true)
   }
 
-  const memberExportButton = (
-    <PageDataExportButton
-      fileBaseName="members"
-      moduleName="members"
-      disabled={listLoading || filteredMembers.length === 0}
-      getSections={getMemberExportSections}
-    />
+  function onDownloadMemberImportTemplate() {
+    downloadMemberImportTemplate()
+    void createAuditLogEvent({
+      module: "members",
+      action: "import",
+      message: `${formatAuthActorLabel()} downloaded the member Excel import template.`,
+      method: "IMPORT",
+      path: "/members/import-template",
+    }).catch(() => {})
+    showToast("Template downloaded.", "success")
+  }
+
+  async function onMemberImportFileSelected(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setMemberImportBusy(true)
+    const apiFailures: { excelRow: number; message: string }[] = []
+    let created = 0
+    const newMembers: Member[] = []
+    try {
+      const buf = await file.arrayBuffer()
+      const { items, errors: parseErrors } = parseMemberImportRows(buf, {
+        existingBodyNormLower: new Set(
+          members.map((m) =>
+            normalizeBodyNumber(m.bodyNumber).toLowerCase()
+          )
+        ),
+      })
+      if (!items.length && parseErrors.length) {
+        setMemberImportReport({ created: 0, parseErrors, apiFailures: [] })
+        setMemberImportReportOpen(true)
+        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
+        void createAuditLogEvent({
+          module: "members",
+          action: "import",
+          message: `${formatAuthActorLabel()} attempted member Excel import; file validation failed.`,
+          method: "IMPORT",
+          path: "/members/import",
+        }).catch(() => {})
+        return
+      }
+      for (const { excelRow, payload } of items) {
+        try {
+          const m = await createMember(payload)
+          newMembers.push(m)
+          created++
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Request failed"
+          apiFailures.push({ excelRow, message: msg })
+        }
+      }
+      if (newMembers.length) {
+        setMembers((prev) => [...newMembers, ...prev])
+      }
+      setMemberImportReport({ created, parseErrors, apiFailures })
+      if (parseErrors.length || apiFailures.length) {
+        setMemberImportReportOpen(true)
+      }
+      void createAuditLogEvent({
+        module: "members",
+        action: "import",
+        message: `${formatAuthActorLabel()} imported ${created} member(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
+        method: "IMPORT",
+        path: "/members/import",
+      }).catch(() => {})
+      if (!apiFailures.length && !parseErrors.length) {
+        showToast(`Imported ${created} member(s).`, "success")
+      } else {
+        showToast(
+          `Imported ${created} member(s). Some rows need review — see report.`,
+          "success"
+        )
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Import failed."
+      showToast(msg, "error")
+    } finally {
+      setMemberImportBusy(false)
+    }
+  }
+
+  const memberHeaderActions = (
+    <>
+      <input
+        ref={memberImportInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="sr-only"
+        aria-label="Select file to import members"
+        onChange={onMemberImportFileSelected}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        disabled={listLoading || memberImportBusy}
+        onClick={onDownloadMemberImportTemplate}
+      >
+        <Download className="size-4" />
+        Import template
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        disabled={listLoading || memberImportBusy}
+        onClick={() => memberImportInputRef.current?.click()}
+      >
+        <FileUp className="size-4" />
+        {memberImportBusy ? "Importing…" : "Import"}
+      </Button>
+      <PageDataExportButton
+        fileBaseName="members"
+        moduleName="members"
+        disabled={listLoading || filteredMembers.length === 0}
+        getSections={getMemberExportSections}
+      />
+    </>
   )
 
   return (
     <>
-      <SiteHeader trailing={memberExportButton} />
+      <SiteHeader trailing={memberHeaderActions} />
       <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -1914,6 +2078,63 @@ export function MemberListPage() {
               onClick={() => void confirmDeleteMember()}
             >
               {deletePending ? "Removing…" : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={memberImportReportOpen}
+        onOpenChange={(open) => {
+          setMemberImportReportOpen(open)
+          if (!open) setMemberImportReport(null)
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Excel import report</DialogTitle>
+            <DialogDescription>
+              {memberImportReport
+                ? `${memberImportReport.created} member(s) saved to the database.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          {memberImportReport ? (
+            <div className="space-y-4 text-sm">
+              {memberImportReport.parseErrors.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Skipped in file</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {memberImportReport.parseErrors.map((e, i) => (
+                      <li key={`parse-${i}`}>{e.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {memberImportReport.apiFailures.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Server errors</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {memberImportReport.apiFailures.map((e, i) => (
+                      <li key={`api-${i}`}>
+                        Row {e.excelRow}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {!memberImportReport.parseErrors.length &&
+              !memberImportReport.apiFailures.length ? (
+                <p className="text-muted-foreground">No issues reported.</p>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setMemberImportReportOpen(false)}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

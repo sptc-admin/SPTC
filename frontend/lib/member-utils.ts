@@ -1,5 +1,59 @@
 export const PH_MOBILE_PREFIX = "+63 "
 
+const BODY_NUMBER_MAX_LEN = 120
+
+export function normalizeBodyNumber(value: string): string {
+  return value.replace(/,/g, "").replace(/\s+/g, " ").trim()
+}
+
+export function getBodyNumberFormatError(raw: string): string | null {
+  const n = normalizeBodyNumber(raw)
+  if (!n.length) return "Body / Prangkisa number is required."
+  if (n.length > BODY_NUMBER_MAX_LEN) {
+    return `Body # must be at most ${BODY_NUMBER_MAX_LEN} characters.`
+  }
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(n)) {
+    return "Body # cannot contain control characters."
+  }
+  return null
+}
+
+const NAME_PART_MAX_LEN = 80
+
+export function normalizeNamePart(value: string): string {
+  return value.replace(/\s+/g, " ").trim()
+}
+
+export function getMemberFullNameFormatError(fullName: {
+  first: string
+  middle: string
+  last: string
+  suffix: string
+}): string | null {
+  const first = normalizeNamePart(fullName.first ?? "")
+  const middle = normalizeNamePart(fullName.middle ?? "")
+  const last = normalizeNamePart(fullName.last ?? "")
+  const suffix = normalizeNamePart(fullName.suffix ?? "")
+  if (!first) return "First name is required."
+  if (!last) return "Last name is required."
+  const parts: [string, string][] = [
+    ["First name", first],
+    ["Middle name", middle],
+    ["Last name", last],
+    ["Suffix", suffix],
+  ]
+  for (const [label, v] of parts) {
+    if (!v) continue
+    if (v.length > NAME_PART_MAX_LEN) {
+      return `${label} must be at most ${NAME_PART_MAX_LEN} characters.`
+    }
+    if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(v)) {
+      return `${label} cannot contain control characters.`
+    }
+  }
+  return null
+}
+
 export function digitsOnly(value: string): string {
   return value.replace(/\D/g, "")
 }

@@ -13,6 +13,14 @@ import { memberHasOutstandingLoan } from '../loans/loan-outstanding.util';
 import { SavingsRecord } from '../savings/savings-record.entity';
 import { LIPATAN_SHARE_CAPITAL_DEDUCTION } from './lipatan.constants';
 import {
+  getBodyNumberFormatError,
+  normalizeBodyNumber,
+} from './body-number.util';
+import {
+  getMemberFullNameFormatError,
+  normalizeMemberFullNameParts,
+} from './member-name.util';
+import {
   LipatanHistoryEntryJson,
   Member,
   MemberFinancialsJson,
@@ -20,6 +28,7 @@ import {
 
 export type CreateMemberInput = {
   bodyNumber: string;
+  precinctNumber: string;
   fullName: Member['fullName'];
   birthday: string;
   address: Member['address'];
@@ -116,25 +125,65 @@ export class MembersService {
     return normalizeMemberRow(member);
   }
 
-  create(data: CreateMemberInput): Promise<Member> {
-    const normalizedName = capitalizeFullName(data.fullName);
+  private async assertBodyNumberUnique(
+    normalizedBody: string,
+    excludeMemberId: string | null,
+  ): Promise<void> {
+    const key = normalizedBody.toLowerCase();
+    const rows = await this.membersRepository.find({
+      select: ['id', 'bodyNumber'],
+    });
+    const clash = rows.find(
+      (m) =>
+        m.id !== excludeMemberId &&
+        normalizeBodyNumber(m.bodyNumber).toLowerCase() === key,
+    );
+    if (clash) {
+      throw new BadRequestException(
+        'This Body # is already assigned to another member.',
+      );
+    }
+  }
+
+  async create(data: CreateMemberInput): Promise<Member> {
+    const fmt = getBodyNumberFormatError(data.bodyNumber);
+    if (fmt) throw new BadRequestException(fmt);
+    const bodyNumber = normalizeBodyNumber(data.bodyNumber);
+    await this.assertBodyNumberUnique(bodyNumber, null);
+    const nameErr = getMemberFullNameFormatError(data.fullName);
+    if (nameErr) throw new BadRequestException(nameErr);
+    const nameParts = normalizeMemberFullNameParts(data.fullName);
+    const normalizedName = capitalizeFullName(nameParts);
     const entity = this.membersRepository.create({
       ...data,
+      bodyNumber,
       fullName: normalizedName,
       financials: normalizeFinancials(data.financials),
       lipatanHistory: [],
     });
-    return this.membersRepository.save(entity).then(normalizeMemberRow);
+    const saved = await this.membersRepository.save(entity);
+    return normalizeMemberRow(saved);
   }
 
   async update(id: string, data: UpdateMemberInput): Promise<Member> {
     const member = await this.findOne(id);
+    if (data.bodyNumber !== undefined) {
+      const fmt = getBodyNumberFormatError(data.bodyNumber);
+      if (fmt) throw new BadRequestException(fmt);
+      const bodyNumber = normalizeBodyNumber(data.bodyNumber);
+      await this.assertBodyNumberUnique(bodyNumber, id);
+      member.bodyNumber = bodyNumber;
+    }
     const next: Partial<Member> = { ...data };
+    delete (next as { bodyNumber?: string }).bodyNumber;
     if (data.financials !== undefined) {
       next.financials = normalizeFinancials(data.financials);
     }
     if (data.fullName !== undefined) {
-      next.fullName = capitalizeFullName(data.fullName);
+      const nameErr = getMemberFullNameFormatError(data.fullName);
+      if (nameErr) throw new BadRequestException(nameErr);
+      const nameParts = normalizeMemberFullNameParts(data.fullName);
+      next.fullName = capitalizeFullName(nameParts);
     }
     Object.assign(member, next);
     const saved = await this.membersRepository.save(member);
@@ -175,7 +224,10 @@ export class MembersService {
       }
 
       const fromOperatorName = displayNameFromMember(franchise);
-      const normalizedLipatanName = capitalizeFullName(dto.fullName);
+      const lipatanNameErr = getMemberFullNameFormatError(dto.fullName);
+      if (lipatanNameErr) throw new BadRequestException(lipatanNameErr);
+      const lipatanNameParts = normalizeMemberFullNameParts(dto.fullName);
+      const normalizedLipatanName = capitalizeFullName(lipatanNameParts);
       const toOperatorName = displayNameFromFullName(normalizedLipatanName);
 
       const butawRepo = manager.getRepository(ButawRecord);
