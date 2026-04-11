@@ -2,7 +2,19 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { ChevronLeft, ChevronRight, Download, Eye, Filter, Pencil, Plus, Trash2, User, X } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Eye,
+  FileUp,
+  Filter,
+  Pencil,
+  Plus,
+  Trash2,
+  User,
+  X,
+} from "lucide-react"
 
 import type {
   Driver,
@@ -15,8 +27,12 @@ import {
   formatPhLocalSpaced,
   formatPhMobileDisplay,
   formatTinDisplay,
+  getBodyNumberFormatError,
+  getMemberFullNameFormatError,
   isValidPhMobile10,
   isValidTin12,
+  normalizeBodyNumber,
+  normalizeNamePart,
   normalizePhMobile10,
   normalizeTinDigits,
 } from "@/lib/member-utils"
@@ -70,6 +86,13 @@ import {
   formatExportDateTime,
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
+import {
+  downloadDriverImportTemplate,
+  parseDriverImportRows,
+  type DriverImportRowError,
+} from "@/lib/driver-import"
+import { createAuditLogEvent } from "@/lib/audit-logs-api"
+import { formatAuthActorLabel } from "@/lib/auth-actor"
 import { SiteHeader } from "@/components/site-header"
 import type { Member } from "@/lib/member-types"
 
@@ -143,9 +166,9 @@ export function DriverListPage() {
   const searchParams = useSearchParams()
   const { showToast } = useAppToast()
   const [drivers, setDrivers] = React.useState<Driver[]>([])
-  const [members, setMembers] = React.useState<any[]>([])
+  const [members, setMembers] = React.useState<Member[]>([])
   const [availableBodyNumbers, setAvailableBodyNumbers] = React.useState<string[]>([])
-  const [viewMemberForBody, setViewMemberForBody] = React.useState<any | null>(null)
+  const [viewMemberForBody, setViewMemberForBody] = React.useState<Member | null>(null)
   const [viewImageSrc, setViewImageSrc] = React.useState<string | null>(null)
   const [listLoading, setListLoading] = React.useState(true)
   const [listError, setListError] = React.useState<string | null>(null)
@@ -184,6 +207,16 @@ export function DriverListPage() {
   const [cities, setCities] = React.useState<AddressOption[]>([])
   const [barangays, setBarangays] = React.useState<AddressOption[]>([])
   const [addressLoading, setAddressLoading] = React.useState(false)
+
+  const driverImportInputRef = React.useRef<HTMLInputElement>(null)
+  const [driverImportBusy, setDriverImportBusy] = React.useState(false)
+  const [driverImportReportOpen, setDriverImportReportOpen] =
+    React.useState(false)
+  const [driverImportReport, setDriverImportReport] = React.useState<{
+    created: number
+    parseErrors: DriverImportRowError[]
+    apiFailures: { excelRow: number; message: string }[]
+  } | null>(null)
 
   React.useEffect(() => {
     let cancelled = false
@@ -310,9 +343,12 @@ export function DriverListPage() {
       "Updated at",
     ] as const
 
-    const memberList = members as Member[]
     const rows = filteredDrivers.map((d) => {
-      const linked = memberList.find((m) => m.bodyNumber === d.bodyNumber)
+      const linked = members.find(
+        (m) =>
+          normalizeBodyNumber(m.bodyNumber).toLowerCase() ===
+          normalizeBodyNumber(d.bodyNumber).toLowerCase()
+      )
       const linkedName = linked
         ? displayFullName(linked.fullName as DriverFullName)
         : ""
@@ -510,17 +546,36 @@ export function DriverListPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!bodyNumber.trim()) {
-      showToast("Body number is required.", "error")
+    const bodyFmt = getBodyNumberFormatError(bodyNumber)
+    if (bodyFmt) {
+      showToast(bodyFmt, "error")
+      return
+    }
+    const bn = normalizeBodyNumber(bodyNumber)
+    const memberBodyKeys = new Set(
+      members.map((m) => normalizeBodyNumber(m.bodyNumber).toLowerCase())
+    )
+    if (!memberBodyKeys.has(bn.toLowerCase())) {
+      showToast(
+        "Body # must match a member’s Body # (select one from the list).",
+        "error"
+      )
       return
     }
     if (!precinctNumber.trim()) {
       showToast("Precinct number is required.", "error")
       return
     }
-    if (!fullName.first.trim() || !fullName.last.trim()) {
-      showToast("First and last name are required.", "error")
+    const nameErr = getMemberFullNameFormatError(fullName)
+    if (nameErr) {
+      showToast(nameErr, "error")
       return
+    }
+    const fullNameNorm = {
+      first: normalizeNamePart(fullName.first),
+      middle: normalizeNamePart(fullName.middle),
+      last: normalizeNamePart(fullName.last),
+      suffix: normalizeNamePart(fullName.suffix),
     }
     if (!birthday) {
       showToast("Birthday is required.", "error")
@@ -558,14 +613,9 @@ export function DriverListPage() {
     }
 
     const basePayload: DriverCreatePayload = {
-      bodyNumber: bodyNumber.trim(),
+      bodyNumber: bn,
       precinctNumber: precinctNumber.trim(),
-      fullName: {
-        first: fullName.first.trim(),
-        middle: fullName.middle.trim(),
-        last: fullName.last.trim(),
-        suffix: fullName.suffix.trim(),
-      },
+      fullName: fullNameNorm,
       birthday,
       address: {
         province: address.province,
@@ -581,18 +631,133 @@ export function DriverListPage() {
     setSaveConfirmOpen(true)
   }
 
-  const driverExportButton = (
-    <PageDataExportButton
-      fileBaseName="drivers"
-      moduleName="drivers"
-      disabled={listLoading || filteredDrivers.length === 0}
-      getSections={getDriverExportSections}
-    />
+  function onDownloadDriverImportTemplate() {
+    downloadDriverImportTemplate()
+    void createAuditLogEvent({
+      module: "drivers",
+      action: "import",
+      message: `${formatAuthActorLabel()} downloaded the driver Excel import template.`,
+      method: "IMPORT",
+      path: "/drivers/import-template",
+    }).catch(() => {})
+    showToast("Template downloaded.", "success")
+  }
+
+  async function onDriverImportFileSelected(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setDriverImportBusy(true)
+    const apiFailures: { excelRow: number; message: string }[] = []
+    let created = 0
+    const newDrivers: Driver[] = []
+    try {
+      const buf = await file.arrayBuffer()
+      const memberBodyNormLower = new Set(
+        members.map((m) => normalizeBodyNumber(m.bodyNumber).toLowerCase())
+      )
+      const { items, errors: parseErrors } = parseDriverImportRows(buf, {
+        memberBodyNormLower,
+      })
+      if (!items.length && parseErrors.length) {
+        setDriverImportReport({ created: 0, parseErrors, apiFailures: [] })
+        setDriverImportReportOpen(true)
+        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
+        void createAuditLogEvent({
+          module: "drivers",
+          action: "import",
+          message: `${formatAuthActorLabel()} attempted driver Excel import; file validation failed.`,
+          method: "IMPORT",
+          path: "/drivers/import",
+        }).catch(() => {})
+        return
+      }
+      for (const { excelRow, payload } of items) {
+        try {
+          const d = await createDriver(payload)
+          newDrivers.push(d)
+          created++
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Request failed"
+          apiFailures.push({ excelRow, message: msg })
+        }
+      }
+      if (newDrivers.length) {
+        setDrivers((prev) => [...newDrivers, ...prev])
+      }
+      setDriverImportReport({ created, parseErrors, apiFailures })
+      if (parseErrors.length || apiFailures.length) {
+        setDriverImportReportOpen(true)
+      }
+      void createAuditLogEvent({
+        module: "drivers",
+        action: "import",
+        message: `${formatAuthActorLabel()} imported ${created} driver(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
+        method: "IMPORT",
+        path: "/drivers/import",
+      }).catch(() => {})
+      if (!apiFailures.length && !parseErrors.length) {
+        showToast(`Imported ${created} driver(s).`, "success")
+      } else {
+        showToast(
+          `Imported ${created} driver(s). Some rows need review — see report.`,
+          "success"
+        )
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Import failed."
+      showToast(msg, "error")
+    } finally {
+      setDriverImportBusy(false)
+    }
+  }
+
+  const driverHeaderActions = (
+    <>
+      <input
+        ref={driverImportInputRef}
+        type="file"
+        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        className="sr-only"
+        aria-label="Select file to import drivers"
+        onChange={onDriverImportFileSelected}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        disabled={listLoading || driverImportBusy}
+        onClick={onDownloadDriverImportTemplate}
+      >
+        <Download className="size-4" />
+        Import template
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2"
+        disabled={listLoading || driverImportBusy}
+        onClick={() => driverImportInputRef.current?.click()}
+      >
+        <FileUp className="size-4" />
+        {driverImportBusy ? "Importing…" : "Import"}
+      </Button>
+      <PageDataExportButton
+        fileBaseName="drivers"
+        moduleName="drivers"
+        disabled={listLoading || filteredDrivers.length === 0}
+        getSections={getDriverExportSections}
+      />
+    </>
   )
 
   return (
     <>
-      <SiteHeader trailing={driverExportButton} />
+      <SiteHeader trailing={driverHeaderActions} />
       <div className="flex flex-1 flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -1379,6 +1544,63 @@ export function DriverListPage() {
               onClick={() => void confirmSaveDriver()}
             >
               {savePending ? "Saving…" : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={driverImportReportOpen}
+        onOpenChange={(open) => {
+          setDriverImportReportOpen(open)
+          if (!open) setDriverImportReport(null)
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Excel import report</DialogTitle>
+            <DialogDescription>
+              {driverImportReport
+                ? `${driverImportReport.created} driver(s) saved to the database.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          {driverImportReport ? (
+            <div className="space-y-4 text-sm">
+              {driverImportReport.parseErrors.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Skipped in file</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {driverImportReport.parseErrors.map((e, i) => (
+                      <li key={`d-parse-${i}`}>{e.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {driverImportReport.apiFailures.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Server errors</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {driverImportReport.apiFailures.map((e, i) => (
+                      <li key={`d-api-${i}`}>
+                        Row {e.excelRow}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {!driverImportReport.parseErrors.length &&
+              !driverImportReport.apiFailures.length ? (
+                <p className="text-muted-foreground">No issues reported.</p>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setDriverImportReportOpen(false)}
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
