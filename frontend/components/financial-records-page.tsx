@@ -52,6 +52,13 @@ import {
   parseSavingsImportRows,
   type SavingsImportRowError,
 } from "@/lib/savings-import"
+import {
+  buildButawImportMemberRefMap,
+  downloadButawImportTemplate,
+  parseButawImportRows,
+  type ButawImportRowError,
+} from "@/lib/butaw-import"
+import { createButawRecord } from "@/lib/butaw-api"
 import { createLoan, fetchLoans } from "@/lib/loans-api"
 import type { Loan } from "@/lib/loan-types"
 import { createSavingsRecord } from "@/lib/savings-api"
@@ -167,6 +174,26 @@ export function FinancialRecordsPage() {
     [savingsImportMembers],
   )
 
+  const [butawImportMembers, setButawImportMembers] = React.useState<Member[]>(
+    [],
+  )
+  const [butawImportMembersLoading, setButawImportMembersLoading] =
+    React.useState(false)
+  const butawImportInputRef = React.useRef<HTMLInputElement>(null)
+  const [butawImportBusy, setButawImportBusy] = React.useState(false)
+  const [butawImportReportOpen, setButawImportReportOpen] =
+    React.useState(false)
+  const [butawImportReport, setButawImportReport] = React.useState<{
+    created: number
+    parseErrors: ButawImportRowError[]
+    apiFailures: { excelRow: number; message: string }[]
+  } | null>(null)
+  const [butawRefreshKey, setButawRefreshKey] = React.useState(0)
+  const butawImportMemberRefMap = React.useMemo(
+    () => buildButawImportMemberRefMap(butawImportMembers),
+    [butawImportMembers],
+  )
+
   const [loansForExport, setLoansForExport] = React.useState<Loan[]>([])
   const [loansExportLoading, setLoansExportLoading] = React.useState(false)
   const [savingsExportSnap, setSavingsExportSnap] =
@@ -227,6 +254,27 @@ export function FinancialRecordsPage() {
       })
       .finally(() => {
         if (!cancelled) setSavingsImportMembersLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mainTab, showToast])
+
+  React.useEffect(() => {
+    if (mainTab !== "butaw") return
+    let cancelled = false
+    setButawImportMembersLoading(true)
+    fetchMembers()
+      .then((list) => {
+        if (!cancelled) setButawImportMembers(list)
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return
+        const msg = e instanceof Error ? e.message : "Could not load members."
+        showToast(msg, "error")
+      })
+      .finally(() => {
+        if (!cancelled) setButawImportMembersLoading(false)
       })
     return () => {
       cancelled = true
@@ -754,6 +802,84 @@ export function FinancialRecordsPage() {
     }
   }
 
+  function onDownloadButawImportTemplate() {
+    downloadButawImportTemplate()
+    void createAuditLogEvent({
+      module: "financial-records-butaw",
+      action: "import",
+      message: `${formatAuthActorLabel()} downloaded the butaw Excel import template.`,
+      method: "IMPORT",
+      path: "/financial-records/butaw/import-template",
+    }).catch(() => {})
+    showToast("Template downloaded.", "success")
+  }
+
+  async function onButawImportFileSelected(
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+    setButawImportBusy(true)
+    const apiFailures: { excelRow: number; message: string }[] = []
+    let created = 0
+    try {
+      const buf = await file.arrayBuffer()
+      const { items, errors: parseErrors } = parseButawImportRows(buf, {
+        memberRefByBodyNormLower: butawImportMemberRefMap,
+      })
+      if (!items.length && parseErrors.length) {
+        setButawImportReport({ created: 0, parseErrors, apiFailures: [] })
+        setButawImportReportOpen(true)
+        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
+        void createAuditLogEvent({
+          module: "financial-records-butaw",
+          action: "import",
+          message: `${formatAuthActorLabel()} attempted butaw Excel import; file validation failed.`,
+          method: "IMPORT",
+          path: "/financial-records/butaw/import",
+        }).catch(() => {})
+        return
+      }
+      for (const { excelRow, payload } of items) {
+        try {
+          await createButawRecord(payload)
+          created++
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Request failed"
+          apiFailures.push({ excelRow, message: msg })
+        }
+      }
+      setButawImportReport({ created, parseErrors, apiFailures })
+      if (parseErrors.length || apiFailures.length) {
+        setButawImportReportOpen(true)
+      }
+      void createAuditLogEvent({
+        module: "financial-records-butaw",
+        action: "import",
+        message: `${formatAuthActorLabel()} imported ${created} butaw record(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
+        method: "IMPORT",
+        path: "/financial-records/butaw/import",
+      }).catch(() => {})
+      if (created > 0) {
+        setButawRefreshKey((k) => k + 1)
+      }
+      if (!apiFailures.length && !parseErrors.length) {
+        showToast(`Imported ${created} record(s).`, "success")
+      } else {
+        showToast(
+          `Imported ${created} record(s). Some rows need review — see report.`,
+          "success"
+        )
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Import failed."
+      showToast(msg, "error")
+    } finally {
+      setButawImportBusy(false)
+    }
+  }
+
   const headerTrailing = (
     <>
       {mainTab === "loan" && loanType === "regular" ? (
@@ -855,6 +981,40 @@ export function FinancialRecordsPage() {
           >
             <FileUp className="size-4" />
             {savingsImportBusy ? "Importing…" : "Import"}
+          </Button>
+        </>
+      ) : null}
+      {mainTab === "butaw" ? (
+        <>
+          <input
+            ref={butawImportInputRef}
+            type="file"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            className="sr-only"
+            aria-label="Select file to import butaw records"
+            onChange={onButawImportFileSelected}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={butawImportBusy || butawImportMembersLoading}
+            onClick={onDownloadButawImportTemplate}
+          >
+            <Download className="size-4" />
+            Import template
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            disabled={butawImportBusy || butawImportMembersLoading}
+            onClick={() => butawImportInputRef.current?.click()}
+          >
+            <FileUp className="size-4" />
+            {butawImportBusy ? "Importing…" : "Import"}
           </Button>
         </>
       ) : null}
@@ -1078,7 +1238,10 @@ export function FinancialRecordsPage() {
                 onExportSnapshot={setSavingsExportSnapStable}
               />
             ) : (
-              <ButawRecordsSection onExportSnapshot={setButawExportSnapStable} />
+              <ButawRecordsSection
+                refreshKey={butawRefreshKey}
+                onExportSnapshot={setButawExportSnapStable}
+              />
             )}
           </CardContent>
         </Card>
@@ -1248,6 +1411,63 @@ export function FinancialRecordsPage() {
             <Button
               type="button"
               onClick={() => setSavingsImportReportOpen(false)}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={butawImportReportOpen}
+        onOpenChange={(open) => {
+          setButawImportReportOpen(open)
+          if (!open) setButawImportReport(null)
+        }}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Butaw — Excel import report</DialogTitle>
+            <DialogDescription>
+              {butawImportReport
+                ? `${butawImportReport.created} record(s) saved to the database.`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          {butawImportReport ? (
+            <div className="space-y-4 text-sm">
+              {butawImportReport.parseErrors.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Skipped in file</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {butawImportReport.parseErrors.map((e, i) => (
+                      <li key={`butaw-parse-${i}`}>{e.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {butawImportReport.apiFailures.length ? (
+                <div>
+                  <p className="font-medium text-destructive">Server errors</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {butawImportReport.apiFailures.map((e, i) => (
+                      <li key={`butaw-api-${i}`}>
+                        Row {e.excelRow}: {e.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {!butawImportReport.parseErrors.length &&
+              !butawImportReport.apiFailures.length ? (
+                <p className="text-muted-foreground">No issues reported.</p>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={() => setButawImportReportOpen(false)}
             >
               Close
             </Button>

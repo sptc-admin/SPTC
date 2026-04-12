@@ -183,10 +183,13 @@ export type ButawRecordsExportSnapshot = {
 
 type ButawRecordsSectionProps = {
   onExportSnapshot?: (snap: ButawRecordsExportSnapshot) => void
+  /** Increment to reload records (e.g. after Excel import). */
+  refreshKey?: number
 }
 
 export function ButawRecordsSection({
   onExportSnapshot,
+  refreshKey = 0,
 }: ButawRecordsSectionProps) {
   const [records, setRecords] = React.useState<ButawRecord[]>([])
   const [members, setMembers] = React.useState<Member[]>([])
@@ -218,7 +221,7 @@ export function ButawRecordsSection({
 
   React.useEffect(() => {
     loadRecords()
-  }, [loadRecords])
+  }, [loadRecords, refreshKey])
 
   React.useEffect(() => {
     onExportSnapshot?.({
