@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   ChevronLeft,
   ChevronRight,
-  Download,
   Filter,
   FileUp,
   Pencil,
@@ -39,7 +38,6 @@ import {
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
 import {
-  downloadSuspensionImportTemplate,
   parseSuspensionImportRows,
   type SuspensionImportDriverRef,
   type SuspensionImportRowError,
@@ -362,18 +360,6 @@ export function SuspensionListPage() {
     setCurrentPage(1)
   }
 
-  function onDownloadSuspensionImportTemplate() {
-    downloadSuspensionImportTemplate()
-    void createAuditLogEvent({
-      module: "suspensions",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the suspensions Excel import template.`,
-      method: "IMPORT",
-      path: "/suspensions/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onSuspensionImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -452,17 +438,6 @@ export function SuspensionListPage() {
         aria-label="Select file to import suspensions"
         onChange={onSuspensionImportFileSelected}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || suspensionImportBusy}
-        onClick={onDownloadSuspensionImportTemplate}
-      >
-        <Download className="size-4" />
-        Import template
-      </Button>
       <Button
         type="button"
         variant="outline"

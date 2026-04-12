@@ -6,7 +6,7 @@ import Link from "next/link"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
-import { appNavItems } from "@/lib/app-nav"
+import { adminNavActions, appNavItems } from "@/lib/app-nav"
 import {
   Sidebar,
   SidebarContent,
@@ -54,9 +54,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     }
   }, [])
 
-  const staffNavItem = isAdmin
-    ? appNavItems.find((item) => item.href === "/staff")
-    : undefined
+  const adminSectionItems = React.useMemo(() => {
+    if (!isAdmin) return []
+    const staff = appNavItems.find((item) => item.href === "/staff")
+    return staff ? [staff, ...adminNavActions] : [...adminNavActions]
+  }, [isAdmin])
   const mainNavItems = appNavItems.filter((item) => item.href !== "/staff")
 
   return (
@@ -78,9 +80,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={mainNavItems} />
-        {staffNavItem ? (
+        {adminSectionItems.length ? (
           <div className="mt-auto">
-            <NavMain items={[staffNavItem]} title="Admin Actions" />
+            <NavMain items={adminSectionItems} title="Admin Actions" />
           </div>
         ) : null}
       </SidebarContent>

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Download, FileUp, Plus } from "lucide-react"
+import { FileUp, Plus } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { AddEmergencyLoan } from "@/components/add-emergency-loan"
@@ -40,21 +40,17 @@ import { emergencyOutstandingBalance } from "@/lib/emergency-loan"
 import { normalizeStoredProcessingFeeRate } from "@/lib/loan-processing-fee"
 import {
   buildLoanImportMemberRefMap,
-  downloadEmergencyLoanImportTemplate,
-  downloadRegularLoanImportTemplate,
   parseEmergencyLoanImportRows,
   parseRegularLoanImportRows,
   type LoanImportRowError,
 } from "@/lib/loan-import"
 import {
   buildSavingsImportMemberRefMap,
-  downloadSavingsImportTemplate,
   parseSavingsImportRows,
   type SavingsImportRowError,
 } from "@/lib/savings-import"
 import {
   buildButawImportMemberRefMap,
-  downloadButawImportTemplate,
   parseButawImportRows,
   type ButawImportRowError,
 } from "@/lib/butaw-import"
@@ -568,18 +564,6 @@ export function FinancialRecordsPage() {
     />
   )
 
-  function onDownloadRegularLoanImportTemplate() {
-    downloadRegularLoanImportTemplate()
-    void createAuditLogEvent({
-      module: "financial-records-loans",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the regular loans Excel import template.`,
-      method: "IMPORT",
-      path: "/financial-records/loans/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onRegularLoanImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -644,18 +628,6 @@ export function FinancialRecordsPage() {
     } finally {
       setLoanImportBusy(false)
     }
-  }
-
-  function onDownloadEmergencyLoanImportTemplate() {
-    downloadEmergencyLoanImportTemplate()
-    void createAuditLogEvent({
-      module: "financial-records-loans",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the emergency loans Excel import template.`,
-      method: "IMPORT",
-      path: "/financial-records/emergency-loans/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
   }
 
   async function onEmergencyLoanImportFileSelected(
@@ -724,18 +696,6 @@ export function FinancialRecordsPage() {
     }
   }
 
-  function onDownloadSavingsImportTemplate() {
-    downloadSavingsImportTemplate()
-    void createAuditLogEvent({
-      module: "financial-records-savings",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the savings Excel import template.`,
-      method: "IMPORT",
-      path: "/financial-records/savings/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onSavingsImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -800,18 +760,6 @@ export function FinancialRecordsPage() {
     } finally {
       setSavingsImportBusy(false)
     }
-  }
-
-  function onDownloadButawImportTemplate() {
-    downloadButawImportTemplate()
-    void createAuditLogEvent({
-      module: "financial-records-butaw",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the butaw Excel import template.`,
-      method: "IMPORT",
-      path: "/financial-records/butaw/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
   }
 
   async function onButawImportFileSelected(
@@ -898,17 +846,6 @@ export function FinancialRecordsPage() {
             size="sm"
             className="gap-2"
             disabled={loanImportBusy || loanImportMembersLoading}
-            onClick={onDownloadRegularLoanImportTemplate}
-          >
-            <Download className="size-4" />
-            Import template
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={loanImportBusy || loanImportMembersLoading}
             onClick={() => loanImportInputRef.current?.click()}
           >
             <FileUp className="size-4" />
@@ -926,17 +863,6 @@ export function FinancialRecordsPage() {
             aria-label="Select file to import emergency loans"
             onChange={onEmergencyLoanImportFileSelected}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={emergencyLoanImportBusy || loanImportMembersLoading}
-            onClick={onDownloadEmergencyLoanImportTemplate}
-          >
-            <Download className="size-4" />
-            Import template
-          </Button>
           <Button
             type="button"
             variant="outline"
@@ -966,17 +892,6 @@ export function FinancialRecordsPage() {
             size="sm"
             className="gap-2"
             disabled={savingsImportBusy || savingsImportMembersLoading}
-            onClick={onDownloadSavingsImportTemplate}
-          >
-            <Download className="size-4" />
-            Import template
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={savingsImportBusy || savingsImportMembersLoading}
             onClick={() => savingsImportInputRef.current?.click()}
           >
             <FileUp className="size-4" />
@@ -994,17 +909,6 @@ export function FinancialRecordsPage() {
             aria-label="Select file to import butaw records"
             onChange={onButawImportFileSelected}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            disabled={butawImportBusy || butawImportMembersLoading}
-            onClick={onDownloadButawImportTemplate}
-          >
-            <Download className="size-4" />
-            Import template
-          </Button>
           <Button
             type="button"
             variant="outline"

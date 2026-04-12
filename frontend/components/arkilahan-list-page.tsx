@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   ChevronLeft,
   ChevronRight,
-  Download,
   Eye,
   FileUp,
   Filter,
@@ -50,7 +49,6 @@ import {
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
 import {
-  downloadArkilahanImportTemplate,
   parseArkilahanImportRows,
   type ArkilahanImportRowError,
 } from "@/lib/arkilahan-import"
@@ -422,18 +420,6 @@ export function ArkilahanListPage() {
     setCurrentPage(1)
   }
 
-  function onDownloadArkilahanImportTemplate() {
-    downloadArkilahanImportTemplate()
-    void createAuditLogEvent({
-      module: "arkilahan",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the arkilahan Excel import template.`,
-      method: "IMPORT",
-      path: "/arkilahan/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onArkilahanImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -515,17 +501,6 @@ export function ArkilahanListPage() {
         aria-label="Select file to import arkilahan records"
         onChange={onArkilahanImportFileSelected}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || arkilahanImportBusy}
-        onClick={onDownloadArkilahanImportTemplate}
-      >
-        <Download className="size-4" />
-        Import template
-      </Button>
       <Button
         type="button"
         variant="outline"

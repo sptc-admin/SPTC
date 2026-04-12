@@ -104,7 +104,6 @@ import {
 } from "@/components/page-data-export"
 import { formatExportDateTime } from "@/lib/csv-export"
 import {
-  downloadMemberImportTemplate,
   parseMemberImportRows,
   type MemberImportRowError,
 } from "@/lib/member-import"
@@ -807,18 +806,6 @@ export function MemberListPage() {
     setSaveConfirmOpen(true)
   }
 
-  function onDownloadMemberImportTemplate() {
-    downloadMemberImportTemplate()
-    void createAuditLogEvent({
-      module: "members",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the member Excel import template.`,
-      method: "IMPORT",
-      path: "/members/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onMemberImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -901,17 +888,6 @@ export function MemberListPage() {
         aria-label="Select file to import members"
         onChange={onMemberImportFileSelected}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={listLoading || memberImportBusy}
-        onClick={onDownloadMemberImportTemplate}
-      >
-        <Download className="size-4" />
-        Import template
-      </Button>
       <Button
         type="button"
         variant="outline"

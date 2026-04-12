@@ -3,6 +3,7 @@ import {
   BanIcon,
   CarIcon,
   ClipboardListIcon,
+  FileSpreadsheetIcon,
   LandmarkIcon,
   LayoutDashboardIcon,
   RepeatIcon,
@@ -11,6 +12,19 @@ import {
   UsersIcon,
   WrenchIcon,
 } from "lucide-react"
+
+/** Shown under “Admin Actions” in the sidebar (admin role only). */
+export const adminNavActions: {
+  title: string
+  href: string
+  icon: LucideIcon
+}[] = [
+  {
+    title: "Import Excel Template",
+    href: "/import-templates",
+    icon: FileSpreadsheetIcon,
+  },
+]
 
 export const appNavItems: {
   title: string
@@ -31,6 +45,7 @@ export const appNavItems: {
 
 export const pageTitles: Record<string, string> = Object.fromEntries([
   ...appNavItems.map((i) => [i.href, i.title] as const),
+  ...adminNavActions.map((i) => [i.href, i.title] as const),
   ["/account", "Account"] as const,
 ])
 

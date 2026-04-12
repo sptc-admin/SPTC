@@ -87,7 +87,6 @@ import {
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
 import {
-  downloadDriverImportTemplate,
   parseDriverImportRows,
   type DriverImportRowError,
 } from "@/lib/driver-import"
@@ -631,18 +630,6 @@ export function DriverListPage() {
     setSaveConfirmOpen(true)
   }
 
-  function onDownloadDriverImportTemplate() {
-    downloadDriverImportTemplate()
-    void createAuditLogEvent({
-      module: "drivers",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the driver Excel import template.`,
-      method: "IMPORT",
-      path: "/drivers/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onDriverImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -724,17 +711,6 @@ export function DriverListPage() {
         aria-label="Select file to import drivers"
         onChange={onDriverImportFileSelected}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={listLoading || driverImportBusy}
-        onClick={onDownloadDriverImportTemplate}
-      >
-        <Download className="size-4" />
-        Import template
-      </Button>
       <Button
         type="button"
         variant="outline"

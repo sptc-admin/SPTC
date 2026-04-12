@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   ChevronLeft,
   ChevronRight,
-  Download,
   Eye,
   FileUp,
   History,
@@ -61,7 +60,6 @@ import {
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
 import {
-  downloadOperationImportTemplate,
   parseOperationImportRows,
   type OperationImportRowError,
 } from "@/lib/operation-import"
@@ -413,18 +411,6 @@ export function OperationsListPage() {
     }
   }
 
-  function onDownloadOperationImportTemplate() {
-    downloadOperationImportTemplate()
-    void createAuditLogEvent({
-      module: "operations",
-      action: "import",
-      message: `${formatAuthActorLabel()} downloaded the operations Excel import template.`,
-      method: "IMPORT",
-      path: "/operations/import-template",
-    }).catch(() => {})
-    showToast("Template downloaded.", "success")
-  }
-
   async function onOperationImportFileSelected(
     e: React.ChangeEvent<HTMLInputElement>
   ) {
@@ -503,17 +489,6 @@ export function OperationsListPage() {
         aria-label="Select file to import operations records"
         onChange={onOperationImportFileSelected}
       />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || operationImportBusy}
-        onClick={onDownloadOperationImportTemplate}
-      >
-        <Download className="size-4" />
-        Import template
-      </Button>
       <Button
         type="button"
         variant="outline"
