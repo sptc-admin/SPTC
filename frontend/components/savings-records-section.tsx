@@ -108,10 +108,13 @@ export type SavingsRecordsExportSnapshot = {
 
 type SavingsRecordsSectionProps = {
   onExportSnapshot?: (snap: SavingsRecordsExportSnapshot) => void
+  /** Increment to reload records (e.g. after Excel import). */
+  refreshKey?: number
 }
 
 export function SavingsRecordsSection({
   onExportSnapshot,
+  refreshKey = 0,
 }: SavingsRecordsSectionProps) {
   const [records, setRecords] = React.useState<SavingsRecord[]>([])
   const [recordsLoading, setRecordsLoading] = React.useState(true)
@@ -139,7 +142,7 @@ export function SavingsRecordsSection({
 
   React.useEffect(() => {
     loadRecords()
-  }, [loadRecords])
+  }, [loadRecords, refreshKey])
 
   React.useEffect(() => {
     onExportSnapshot?.({

@@ -33,6 +33,7 @@ import {
   emergencyTotalPayment,
 } from "@/lib/emergency-loan"
 import { DIMINISHING_SCHEDULE_FACTOR } from "@/lib/loan-schedule"
+import { normalizeStoredProcessingFeeRate } from "@/lib/loan-processing-fee"
 import { deleteLoan, fetchLoans, updateLoan } from "@/lib/loans-api"
 import type { Loan, LoanScheduleRow } from "@/lib/loan-types"
 import { matchesMemberFilter } from "@/lib/member-filter"
@@ -91,7 +92,8 @@ function formatPercentValue(value: number): string {
 }
 
 function processingFeeTotal(loan: Loan): number {
-  return loan.amountOfLoan * (loan.processingFeeRate / 100)
+  const r = normalizeStoredProcessingFeeRate(loan.processingFeeRate)
+  return loan.amountOfLoan * (r / 100)
 }
 
 function loanTypeLabel(loan: Loan): string {
@@ -965,7 +967,12 @@ export function LoansListTable({
                     <div className="space-y-0.5">
                       <dt className="text-muted-foreground">Processing fee</dt>
                       <dd className="font-medium tabular-nums">
-                        {formatPercentValue(viewLoan.processingFeeRate)} (
+                        {formatPercentValue(
+                          normalizeStoredProcessingFeeRate(
+                            viewLoan.processingFeeRate,
+                          ),
+                        )}{" "}
+                        (
                         {formatCurrency(processingFeeTotal(viewLoan))} total)
                       </dd>
                     </div>

@@ -8,6 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
 import {
+  processingFeeVsAmountError,
+  normalizeStoredProcessingFeeRate,
+} from "@/lib/loan-processing-fee"
+import {
   DIMINISHING_SCHEDULE_FACTOR,
   buildDiminishingSchedule,
   formatDateLong,
@@ -87,7 +91,10 @@ export function AddRegularLoan({
 
   const amount = toNumber(amountOfLoan)
   const terms = Math.max(0, Math.floor(toNumber(termValue)))
-  const processingFeeRateNum = Math.max(0, toNumber(processingFeeRate))
+  const processingFeeRateNum = Math.max(
+    0,
+    normalizeStoredProcessingFeeRate(toNumber(processingFeeRate)),
+  )
   const interestRate = 1.5
   const capitalBuildUp = amount * 0.02
   const processingFeeAmount = amount * (processingFeeRateNum / 100)
@@ -182,6 +189,8 @@ export function AddRegularLoan({
     if (paymentRows.length === 0) {
       return showToast("Unable to generate payment schedule.", "error")
     }
+    const feeRule = processingFeeVsAmountError(amount, processingFeeRateNum)
+    if (feeRule) return showToast(feeRule, "error")
 
     setSavePending(true)
     try {
