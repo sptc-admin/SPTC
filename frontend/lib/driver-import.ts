@@ -317,12 +317,12 @@ export function parseDriverImportRows(
       pushErr("Province, city, barangay, and street / address line are required.")
       continue
     }
-    const mobile = normalizePhMobile10(mobileRaw as string)
+    const mobile = normalizePhMobile10(mobileRaw)
     if (!isValidPhMobile10(mobile)) {
       pushErr("Mobile must be 10 digits starting with 9.")
       continue
     }
-    const tin = normalizeTinDigits(tinRaw as string)
+    const tin = normalizeTinDigits(tinRaw)
     if (!isValidTin12(tin)) {
       pushErr("TIN must be 12 digits.")
       continue

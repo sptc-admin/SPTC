@@ -54,12 +54,12 @@ export function getMemberFullNameFormatError(fullName: {
   return null
 }
 
-export function digitsOnly(value: string): string {
-  return value.replace(/\D/g, "")
+export function digitsOnly(value: unknown): string {
+  return String(value ?? "").replace(/\D/g, "")
 }
 
 /** Normalize to 10-digit PH mobile (strip leading 63 or 0). */
-export function normalizePhMobile10(value: string): string {
+export function normalizePhMobile10(value: unknown): string {
   let d = digitsOnly(value)
   if (d.startsWith("63")) d = d.slice(2)
   if (d.startsWith("0")) d = d.slice(1)
@@ -93,7 +93,7 @@ export function computeAgeFromBirthDate(isoDate: string): number | null {
   return age >= 0 ? age : null
 }
 
-export function normalizeTinDigits(value: string): string {
+export function normalizeTinDigits(value: unknown): string {
   return digitsOnly(value).slice(0, 12)
 }
 
