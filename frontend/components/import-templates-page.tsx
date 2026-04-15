@@ -13,17 +13,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { downloadArkilahanImportTemplate } from "@/lib/arkilahan-import"
-import { downloadButawImportTemplate } from "@/lib/butaw-import"
 import { downloadDriverImportTemplate } from "@/lib/driver-import"
-import {
-  downloadEmergencyLoanImportTemplate,
-  downloadRegularLoanImportTemplate,
-} from "@/lib/loan-import"
 import { downloadMemberImportTemplate } from "@/lib/member-import"
-import { downloadOperationImportTemplate } from "@/lib/operation-import"
-import { downloadSavingsImportTemplate } from "@/lib/savings-import"
-import { downloadSuspensionImportTemplate } from "@/lib/suspension-import"
 
 type Row = { label: string; onDownload: () => void }
 
@@ -87,35 +78,6 @@ export function ImportTemplatesPage() {
                 {
                   label: "Drivers",
                   onDownload: () => wrap(downloadDriverImportTemplate),
-                },
-                {
-                  label: "Regular loans",
-                  onDownload: () => wrap(downloadRegularLoanImportTemplate),
-                },
-                {
-                  label: "Emergency loans",
-                  onDownload: () =>
-                    wrap(downloadEmergencyLoanImportTemplate),
-                },
-                {
-                  label: "Savings",
-                  onDownload: () => wrap(downloadSavingsImportTemplate),
-                },
-                {
-                  label: "Butaw",
-                  onDownload: () => wrap(downloadButawImportTemplate),
-                },
-                {
-                  label: "Arkilahan",
-                  onDownload: () => wrap(downloadArkilahanImportTemplate),
-                },
-                {
-                  label: "Suspension",
-                  onDownload: () => wrap(downloadSuspensionImportTemplate),
-                },
-                {
-                  label: "Operations",
-                  onDownload: () => wrap(downloadOperationImportTemplate),
                 },
               ]}
             />

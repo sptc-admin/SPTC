@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  FileUp,
   Filter,
   Pencil,
   Plus,
@@ -48,13 +47,6 @@ import {
   formatExportDateTime,
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
-import {
-  parseArkilahanImportRows,
-  type ArkilahanImportRowError,
-} from "@/lib/arkilahan-import"
-import { createAuditLogEvent } from "@/lib/audit-logs-api"
-import { formatAuthActorLabel } from "@/lib/auth-actor"
-import { normalizeBodyNumber } from "@/lib/member-utils"
 import { SiteHeader } from "@/components/site-header"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -134,16 +126,6 @@ export function ArkilahanListPage() {
   const [termValue, setTermValue] = React.useState("1")
   const [termUnit, setTermUnit] = React.useState<ArkilahanTermUnit>("months")
   const [documentUrl, setDocumentUrl] = React.useState("")
-
-  const arkilahanImportInputRef = React.useRef<HTMLInputElement>(null)
-  const [arkilahanImportBusy, setArkilahanImportBusy] = React.useState(false)
-  const [arkilahanImportReportOpen, setArkilahanImportReportOpen] =
-    React.useState(false)
-  const [arkilahanImportReport, setArkilahanImportReport] = React.useState<{
-    created: number
-    parseErrors: ArkilahanImportRowError[]
-    apiFailures: { excelRow: number; message: string }[]
-  } | null>(null)
 
   const openDatePicker = React.useCallback(
     (e: React.MouseEvent<HTMLInputElement>) => {
@@ -420,98 +402,8 @@ export function ArkilahanListPage() {
     setCurrentPage(1)
   }
 
-  async function onArkilahanImportFileSelected(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0]
-    e.target.value = ""
-    if (!file) return
-    setArkilahanImportBusy(true)
-    const apiFailures: { excelRow: number; message: string }[] = []
-    let created = 0
-    const newRows: Arkilahan[] = []
-    try {
-      const buf = await file.arrayBuffer()
-      const memberBodyNormLower = new Set(
-        members.map((m) => normalizeBodyNumber(m.bodyNumber).toLowerCase())
-      )
-      const { items, errors: parseErrors } = parseArkilahanImportRows(buf, {
-        memberBodyNormLower,
-      })
-      if (!items.length && parseErrors.length) {
-        setArkilahanImportReport({ created: 0, parseErrors, apiFailures: [] })
-        setArkilahanImportReportOpen(true)
-        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
-        void createAuditLogEvent({
-          module: "arkilahan",
-          action: "import",
-          message: `${formatAuthActorLabel()} attempted arkilahan Excel import; file validation failed.`,
-          method: "IMPORT",
-          path: "/arkilahan/import",
-        }).catch(() => {})
-        return
-      }
-      for (const { excelRow, payload } of items) {
-        try {
-          const row = await createArkilahan(payload)
-          newRows.push(row)
-          created++
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Request failed"
-          apiFailures.push({ excelRow, message: msg })
-        }
-      }
-      if (newRows.length) {
-        setEntries((prev) => [...newRows, ...prev])
-      }
-      setArkilahanImportReport({ created, parseErrors, apiFailures })
-      if (parseErrors.length || apiFailures.length) {
-        setArkilahanImportReportOpen(true)
-      }
-      void createAuditLogEvent({
-        module: "arkilahan",
-        action: "import",
-        message: `${formatAuthActorLabel()} imported ${created} arkilahan record(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
-        method: "IMPORT",
-        path: "/arkilahan/import",
-      }).catch(() => {})
-      if (!apiFailures.length && !parseErrors.length) {
-        showToast(`Imported ${created} record(s).`, "success")
-      } else {
-        showToast(
-          `Imported ${created} record(s). Some rows need review — see report.`,
-          "success"
-        )
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Import failed."
-      showToast(msg, "error")
-    } finally {
-      setArkilahanImportBusy(false)
-    }
-  }
-
   const arkilahanHeaderActions = (
     <>
-      <input
-        ref={arkilahanImportInputRef}
-        type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-        className="sr-only"
-        aria-label="Select file to import arkilahan records"
-        onChange={onArkilahanImportFileSelected}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || arkilahanImportBusy}
-        onClick={() => arkilahanImportInputRef.current?.click()}
-      >
-        <FileUp className="size-4" />
-        {arkilahanImportBusy ? "Importing…" : "Import"}
-      </Button>
       <PageDataExportButton
         fileBaseName="arkilahan"
         moduleName="arkilahan"
@@ -880,6 +772,7 @@ export function ArkilahanListPage() {
                     className={selectClassName}
                     value={suffix}
                     onChange={(e) => setSuffix(e.target.value)}
+                    searchable={false}
                   >
                     {SUFFIX_OPTIONS.map((value) => (
                       <option key={value || "none"} value={value}>
@@ -909,6 +802,7 @@ export function ArkilahanListPage() {
                   value={termUnit}
                   onChange={(e) => setTermUnit(e.target.value as ArkilahanTermUnit)}
                   required
+                  searchable={false}
                 >
                   <option value="months">Months</option>
                   <option value="years">Years</option>
@@ -979,63 +873,6 @@ export function ArkilahanListPage() {
           </form>
         </SheetContent>
       </Sheet>
-
-      <Dialog
-        open={arkilahanImportReportOpen}
-        onOpenChange={(open) => {
-          setArkilahanImportReportOpen(open)
-          if (!open) setArkilahanImportReport(null)
-        }}
-      >
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Excel import report</DialogTitle>
-            <DialogDescription>
-              {arkilahanImportReport
-                ? `${arkilahanImportReport.created} record(s) saved to the database.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          {arkilahanImportReport ? (
-            <div className="space-y-4 text-sm">
-              {arkilahanImportReport.parseErrors.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Skipped in file</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {arkilahanImportReport.parseErrors.map((e, i) => (
-                      <li key={`a-parse-${i}`}>{e.message}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {arkilahanImportReport.apiFailures.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Server errors</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {arkilahanImportReport.apiFailures.map((e, i) => (
-                      <li key={`a-api-${i}`}>
-                        Row {e.excelRow}: {e.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {!arkilahanImportReport.parseErrors.length &&
-              !arkilahanImportReport.apiFailures.length ? (
-                <p className="text-muted-foreground">No issues reported.</p>
-              ) : null}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              onClick={() => setArkilahanImportReportOpen(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={Boolean(deleteTarget)}

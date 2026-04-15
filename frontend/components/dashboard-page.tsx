@@ -339,6 +339,7 @@ export function DashboardPage() {
               onChange={(e) =>
                 setDateFilterMode(e.target.value as "range" | "all")
               }
+              searchable={false}
             >
               <option value="range">Date range</option>
               <option value="all">All time</option>

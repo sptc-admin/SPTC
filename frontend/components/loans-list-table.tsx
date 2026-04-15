@@ -571,6 +571,7 @@ export function LoansListTable({
               onChange={(e) =>
                 setFilterPaid(e.target.value as "all" | "paid" | "unpaid")
               }
+              searchable={false}
             >
               <option value="all">All</option>
               <option value="paid">Paid</option>
@@ -599,6 +600,7 @@ export function LoansListTable({
                       e.target.value as "all" | "months" | "years"
                     )
                   }
+                  searchable={false}
                 >
                   <option value="all">All</option>
                   <option value="months">Month(s)</option>

@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
-  FileUp,
   History,
   Pencil,
   Plus,
@@ -59,13 +58,6 @@ import {
   formatExportDateTime,
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
-import {
-  parseOperationImportRows,
-  type OperationImportRowError,
-} from "@/lib/operation-import"
-import { createAuditLogEvent } from "@/lib/audit-logs-api"
-import { formatAuthActorLabel } from "@/lib/auth-actor"
-import { normalizeBodyNumber } from "@/lib/member-utils"
 import { SiteHeader } from "@/components/site-header"
 
 function formatReplacedMonthYear(iso: string): string {
@@ -153,24 +145,6 @@ export function OperationsListPage() {
   const [filterRegStatus, setFilterRegStatus] = React.useState<
     "all" | "active" | "expired"
   >("all")
-
-  const operationImportInputRef = React.useRef<HTMLInputElement>(null)
-  const [operationImportBusy, setOperationImportBusy] = React.useState(false)
-  const [operationImportReportOpen, setOperationImportReportOpen] =
-    React.useState(false)
-  const [operationImportReport, setOperationImportReport] = React.useState<{
-    created: number
-    parseErrors: OperationImportRowError[]
-    apiFailures: { excelRow: number; message: string }[]
-  } | null>(null)
-
-  const memberBodyNormLower = React.useMemo(
-    () =>
-      new Set(
-        bodyNumbers.map((bn) => normalizeBodyNumber(bn).toLowerCase()),
-      ),
-    [bodyNumbers],
-  )
 
   const [bodyNumber, setBodyNumber] = React.useState("")
   const [mtopDocumentUrl, setMtopDocumentUrl] = React.useState("")
@@ -411,95 +385,8 @@ export function OperationsListPage() {
     }
   }
 
-  async function onOperationImportFileSelected(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0]
-    e.target.value = ""
-    if (!file) return
-    setOperationImportBusy(true)
-    const apiFailures: { excelRow: number; message: string }[] = []
-    let created = 0
-    const newRows: Operation[] = []
-    try {
-      const buf = await file.arrayBuffer()
-      const { items, errors: parseErrors } = parseOperationImportRows(buf, {
-        memberBodyNormLower,
-      })
-      if (!items.length && parseErrors.length) {
-        setOperationImportReport({ created: 0, parseErrors, apiFailures: [] })
-        setOperationImportReportOpen(true)
-        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
-        void createAuditLogEvent({
-          module: "operations",
-          action: "import",
-          message: `${formatAuthActorLabel()} attempted operations Excel import; file validation failed.`,
-          method: "IMPORT",
-          path: "/operations/import",
-        }).catch(() => {})
-        return
-      }
-      for (const { excelRow, payload } of items) {
-        try {
-          const row = await createOperation(payload)
-          newRows.push(row)
-          created++
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Request failed"
-          apiFailures.push({ excelRow, message: msg })
-        }
-      }
-      if (newRows.length) {
-        setOperations((prev) => [...newRows, ...prev])
-      }
-      setOperationImportReport({ created, parseErrors, apiFailures })
-      if (parseErrors.length || apiFailures.length) {
-        setOperationImportReportOpen(true)
-      }
-      void createAuditLogEvent({
-        module: "operations",
-        action: "import",
-        message: `${formatAuthActorLabel()} imported ${created} operations record(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
-        method: "IMPORT",
-        path: "/operations/import",
-      }).catch(() => {})
-      if (!apiFailures.length && !parseErrors.length) {
-        showToast(`Imported ${created} record(s).`, "success")
-      } else {
-        showToast(
-          `Imported ${created} record(s). Some rows need review — see report.`,
-          "success"
-        )
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Import failed."
-      showToast(msg, "error")
-    } finally {
-      setOperationImportBusy(false)
-    }
-  }
-
   const operationsHeaderActions = (
     <>
-      <input
-        ref={operationImportInputRef}
-        type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-        className="sr-only"
-        aria-label="Select file to import operations records"
-        onChange={onOperationImportFileSelected}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || operationImportBusy}
-        onClick={() => operationImportInputRef.current?.click()}
-      >
-        <FileUp className="size-4" />
-        {operationImportBusy ? "Importing…" : "Import"}
-      </Button>
       <PageDataExportButton
         fileBaseName="operations"
         moduleName="operations"
@@ -567,6 +454,7 @@ export function OperationsListPage() {
                           e.target.value as "all" | "active" | "expired"
                         )
                       }
+                      searchable={false}
                     >
                       <option value="all">All</option>
                       <option value="active">Active</option>
@@ -1014,63 +902,6 @@ export function OperationsListPage() {
               <OperationDocumentPreview url={viewDocUrl} />
             </div>
           ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={operationImportReportOpen}
-        onOpenChange={(open) => {
-          setOperationImportReportOpen(open)
-          if (!open) setOperationImportReport(null)
-        }}
-      >
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Excel import report</DialogTitle>
-            <DialogDescription>
-              {operationImportReport
-                ? `${operationImportReport.created} record(s) saved to the database.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          {operationImportReport ? (
-            <div className="space-y-4 text-sm">
-              {operationImportReport.parseErrors.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Skipped in file</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {operationImportReport.parseErrors.map((e, i) => (
-                      <li key={`o-parse-${i}`}>{e.message}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {operationImportReport.apiFailures.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Server errors</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {operationImportReport.apiFailures.map((e, i) => (
-                      <li key={`o-api-${i}`}>
-                        Row {e.excelRow}: {e.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {!operationImportReport.parseErrors.length &&
-              !operationImportReport.apiFailures.length ? (
-                <p className="text-muted-foreground">No issues reported.</p>
-              ) : null}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              onClick={() => setOperationImportReportOpen(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

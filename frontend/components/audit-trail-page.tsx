@@ -87,6 +87,7 @@ export function AuditTrailPage() {
             className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             value={moduleFilter}
             onChange={(e) => setModuleFilter(e.target.value)}
+            searchable={false}
           >
             {MODULE_OPTIONS.map((m) => (
               <option key={m} value={m}>

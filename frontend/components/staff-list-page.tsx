@@ -489,6 +489,7 @@ export function StaffListPage() {
                 className={selectClass}
                 value={role}
                 onChange={(e) => setRole(e.target.value as StaffRole)}
+                searchable={false}
               >
                 <option value="staff">Staff</option>
                 <option value="admin">Admin</option>

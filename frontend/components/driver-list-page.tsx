@@ -1123,6 +1123,7 @@ export function DriverListPage() {
                     onChange={(e) =>
                       setFullName((n) => ({ ...n, suffix: e.target.value }))
                     }
+                    searchable={false}
                   >
                     {SUFFIX_OPTIONS.map((s) => (
                       <option key={s || "none"} value={s}>

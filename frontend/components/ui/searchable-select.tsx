@@ -6,6 +6,7 @@ type SearchableSelectProps = Omit<React.ComponentProps<"input">, "onChange" | "v
   value?: string
   onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void
   children?: React.ReactNode
+  searchable?: boolean
 }
 
 type SelectOption = {
@@ -55,6 +56,7 @@ export function SearchableSelect({
   value,
   onChange,
   placeholder,
+  searchable = true,
   ...props
 }: SearchableSelectProps) {
   const listId = React.useId()
@@ -102,7 +104,9 @@ export function SearchableSelect({
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     setIsFocused(true)
-    setInputValue("")
+    if (searchable) {
+      setInputValue("")
+    }
     props.onFocus?.(e)
   }
 
@@ -127,6 +131,32 @@ export function SearchableSelect({
     }
 
     props.onBlur?.(e)
+  }
+
+  if (!searchable) {
+    const handleSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      onChange?.(e)
+    }
+
+    return (
+      <select
+        className={className}
+        value={currentValue}
+        onChange={handleSelectChange}
+        disabled={props.disabled}
+      >
+        <option value="" disabled={!placeholderOption}>
+          {derivedPlaceholder}
+        </option>
+        {options
+          .filter((opt) => opt.value !== "")
+          .map((opt) => (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {opt.label}
+            </option>
+          ))}
+      </select>
+    )
   }
 
   return (

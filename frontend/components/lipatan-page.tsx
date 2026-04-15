@@ -1017,6 +1017,7 @@ export function LipatanPage() {
                             suffix: e.target.value,
                           }))
                         }
+                        searchable={false}
                       >
                         {SUFFIX_OPTIONS.map((s) => (
                           <option key={s || "none"} value={s}>

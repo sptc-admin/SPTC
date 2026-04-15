@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  FileUp,
   Pencil,
   Plus,
   ShieldAlert,
@@ -37,15 +36,8 @@ import {
   formatExportDateTime,
   formatExportDateTimeFromIso,
 } from "@/lib/csv-export"
-import {
-  parseSuspensionImportRows,
-  type SuspensionImportDriverRef,
-  type SuspensionImportRowError,
-} from "@/lib/suspension-import"
-import { createAuditLogEvent } from "@/lib/audit-logs-api"
-import { formatAuthActorLabel } from "@/lib/auth-actor"
 import { SiteHeader } from "@/components/site-header"
-import { formatPhMobileDisplay, normalizeBodyNumber } from "@/lib/member-utils"
+import { formatPhMobileDisplay } from "@/lib/member-utils"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -114,31 +106,6 @@ export function SuspensionListPage() {
     endTo: "",
     status: "",
   })
-
-  const suspensionImportInputRef = React.useRef<HTMLInputElement>(null)
-  const [suspensionImportBusy, setSuspensionImportBusy] = React.useState(false)
-  const [suspensionImportReportOpen, setSuspensionImportReportOpen] =
-    React.useState(false)
-  const [suspensionImportReport, setSuspensionImportReport] = React.useState<{
-    created: number
-    parseErrors: SuspensionImportRowError[]
-    apiFailures: { excelRow: number; message: string }[]
-  } | null>(null)
-
-  const driverRefByBodyNormLower = React.useMemo(() => {
-    const m = new Map<string, SuspensionImportDriverRef>()
-    for (const d of drivers) {
-      const k = normalizeBodyNumber(d.bodyNumber).toLowerCase()
-      if (!m.has(k)) {
-        m.set(k, {
-          id: d.id,
-          bodyNumber: d.bodyNumber,
-          driverName: displayDriverName(d),
-        })
-      }
-    }
-    return m
-  }, [drivers])
 
   const filteredSuspensions = React.useMemo(() => {
     return suspensions.filter((item) => {
@@ -360,95 +327,8 @@ export function SuspensionListPage() {
     setCurrentPage(1)
   }
 
-  async function onSuspensionImportFileSelected(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0]
-    e.target.value = ""
-    if (!file) return
-    setSuspensionImportBusy(true)
-    const apiFailures: { excelRow: number; message: string }[] = []
-    let created = 0
-    const newRows: Suspension[] = []
-    try {
-      const buf = await file.arrayBuffer()
-      const { items, errors: parseErrors } = parseSuspensionImportRows(buf, {
-        driverRefByBodyNormLower,
-      })
-      if (!items.length && parseErrors.length) {
-        setSuspensionImportReport({ created: 0, parseErrors, apiFailures: [] })
-        setSuspensionImportReportOpen(true)
-        showToast(parseErrors[0]?.message ?? "Import could not read the file.", "error")
-        void createAuditLogEvent({
-          module: "suspensions",
-          action: "import",
-          message: `${formatAuthActorLabel()} attempted suspensions Excel import; file validation failed.`,
-          method: "IMPORT",
-          path: "/suspensions/import",
-        }).catch(() => {})
-        return
-      }
-      for (const { excelRow, payload } of items) {
-        try {
-          const row = await createSuspension(payload)
-          newRows.push(row)
-          created++
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Request failed"
-          apiFailures.push({ excelRow, message: msg })
-        }
-      }
-      if (newRows.length) {
-        setSuspensions((prev) => [...newRows, ...prev])
-      }
-      setSuspensionImportReport({ created, parseErrors, apiFailures })
-      if (parseErrors.length || apiFailures.length) {
-        setSuspensionImportReportOpen(true)
-      }
-      void createAuditLogEvent({
-        module: "suspensions",
-        action: "import",
-        message: `${formatAuthActorLabel()} imported ${created} suspension(s) from Excel (${parseErrors.length} row(s) skipped in file, ${apiFailures.length} API error(s)).`,
-        method: "IMPORT",
-        path: "/suspensions/import",
-      }).catch(() => {})
-      if (!apiFailures.length && !parseErrors.length) {
-        showToast(`Imported ${created} record(s).`, "success")
-      } else {
-        showToast(
-          `Imported ${created} record(s). Some rows need review — see report.`,
-          "success"
-        )
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Import failed."
-      showToast(msg, "error")
-    } finally {
-      setSuspensionImportBusy(false)
-    }
-  }
-
   const suspensionHeaderActions = (
     <>
-      <input
-        ref={suspensionImportInputRef}
-        type="file"
-        accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-        className="sr-only"
-        aria-label="Select file to import suspensions"
-        onChange={onSuspensionImportFileSelected}
-      />
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={loading || suspensionImportBusy}
-        onClick={() => suspensionImportInputRef.current?.click()}
-      >
-        <FileUp className="size-4" />
-        {suspensionImportBusy ? "Importing…" : "Import"}
-      </Button>
       <PageDataExportButton
         fileBaseName="suspensions"
         moduleName="suspensions"
@@ -575,6 +455,7 @@ export function SuspensionListPage() {
                   onChange={(e) =>
                     setFilters((prev) => ({ ...prev, status: e.target.value }))
                   }
+                  searchable={false}
                 >
                   <option value="">All</option>
                   <option value="active">Suspended</option>
@@ -761,6 +642,7 @@ export function SuspensionListPage() {
                 value={status}
                 onChange={(e) => setStatus(e.target.value as SuspensionStatus)}
                 required
+                searchable={false}
               >
                 <option value="active">Suspended</option>
                 <option value="cleared">Cleared</option>
@@ -783,63 +665,6 @@ export function SuspensionListPage() {
           </form>
         </SheetContent>
       </Sheet>
-
-      <Dialog
-        open={suspensionImportReportOpen}
-        onOpenChange={(open) => {
-          setSuspensionImportReportOpen(open)
-          if (!open) setSuspensionImportReport(null)
-        }}
-      >
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Excel import report</DialogTitle>
-            <DialogDescription>
-              {suspensionImportReport
-                ? `${suspensionImportReport.created} record(s) saved to the database.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          {suspensionImportReport ? (
-            <div className="space-y-4 text-sm">
-              {suspensionImportReport.parseErrors.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Skipped in file</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {suspensionImportReport.parseErrors.map((e, i) => (
-                      <li key={`s-parse-${i}`}>{e.message}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {suspensionImportReport.apiFailures.length ? (
-                <div>
-                  <p className="font-medium text-destructive">Server errors</p>
-                  <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
-                    {suspensionImportReport.apiFailures.map((e, i) => (
-                      <li key={`s-api-${i}`}>
-                        Row {e.excelRow}: {e.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {!suspensionImportReport.parseErrors.length &&
-              !suspensionImportReport.apiFailures.length ? (
-                <p className="text-muted-foreground">No issues reported.</p>
-              ) : null}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              onClick={() => setSuspensionImportReportOpen(false)}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={Boolean(deleteTarget)}
