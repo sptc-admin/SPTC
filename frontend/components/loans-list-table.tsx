@@ -1537,11 +1537,6 @@ export function LoansListTable({
                   <span className="font-medium text-foreground">
                     {formatCurrency(paymentDialogRow.payment)}
                   </span>
-                  <br />
-                  <span className="mt-1 block text-xs">
-                    Enter the actual payment. If higher than scheduled, excess goes
-                    to principal (lowers balance).
-                  </span>
                 </>
               ) : null}
             </DialogDescription>
