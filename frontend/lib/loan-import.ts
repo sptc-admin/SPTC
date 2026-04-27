@@ -11,7 +11,6 @@ import { triggerXlsxDownload } from "@/lib/csv-export"
 import {
   LOAN_PROCESSING_FEE_AMOUNT_THRESHOLD,
   normalizeStoredProcessingFeeRate,
-  processingFeeVsAmountError,
 } from "@/lib/loan-processing-fee"
 import { getBodyNumberFormatError, normalizeBodyNumber } from "@/lib/member-utils"
 
@@ -425,11 +424,6 @@ export function parseRegularLoanImportRows(
     }
 
     const processingFeeRateNorm = normalizeStoredProcessingFeeRate(processingFeeRate)
-    const feeRule = processingFeeVsAmountError(amountOfLoan, processingFeeRateNorm)
-    if (feeRule) {
-      pushErr(feeRule)
-      continue
-    }
 
     const insParsed = insStr === "" ? 0 : parseDecimal(insStr)
     const insuranceAmount =

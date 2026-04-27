@@ -7,10 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
-import {
-  processingFeeVsAmountError,
-  normalizeStoredProcessingFeeRate,
-} from "@/lib/loan-processing-fee"
+import { normalizeStoredProcessingFeeRate } from "@/lib/loan-processing-fee"
 import {
   DIMINISHING_SCHEDULE_FACTOR,
   buildDiminishingSchedule,
@@ -84,7 +81,7 @@ export function AddRegularLoan({
   const [amountOfLoan, setAmountOfLoan] = React.useState("")
   const [termValue, setTermValue] = React.useState("")
   const [termUnit, setTermUnit] = React.useState<TermUnit>("months")
-  const [processingFeeRate, setProcessingFeeRate] = React.useState("0")
+  const [processingFeeRate, setProcessingFeeRate] = React.useState("3")
   const [insurance, setInsurance] = React.useState("")
   const [dateReleased, setDateReleased] = React.useState("")
   const [savePending, setSavePending] = React.useState(false)
@@ -122,14 +119,6 @@ export function AddRegularLoan({
       cancelled = true
     }
   }, [showToast])
-
-  React.useEffect(() => {
-    if (!amount) {
-      setProcessingFeeRate("0")
-      return
-    }
-    setProcessingFeeRate(amount <= 30000 ? "3" : "6")
-  }, [amount])
 
   const selectedMember = React.useMemo(
     () => members.find((item) => item.id === memberId) ?? null,
@@ -180,18 +169,8 @@ export function AddRegularLoan({
     )
   }, [paymentRows])
 
-  async function onSaveRegularLoan() {
-    if (!selectedMember) return showToast("Member is required.", "error")
-    if (amount <= 0) return showToast("Amount of loan is required.", "error")
-    if (monthsCount <= 0) return showToast("Valid terms are required.", "error")
-    if (!dateReleased) return showToast("Date released is required.", "error")
-    if (!maturityDateValue) return showToast("Maturity is invalid.", "error")
-    if (paymentRows.length === 0) {
-      return showToast("Unable to generate payment schedule.", "error")
-    }
-    const feeRule = processingFeeVsAmountError(amount, processingFeeRateNum)
-    if (feeRule) return showToast(feeRule, "error")
-
+  async function performSaveRegularLoan() {
+    if (!selectedMember) return
     setSavePending(true)
     try {
       await createLoan({
@@ -228,6 +207,18 @@ export function AddRegularLoan({
     } finally {
       setSavePending(false)
     }
+  }
+
+  function onSaveRegularLoan() {
+    if (!selectedMember) return showToast("Member is required.", "error")
+    if (amount <= 0) return showToast("Amount of loan is required.", "error")
+    if (monthsCount <= 0) return showToast("Valid terms are required.", "error")
+    if (!dateReleased) return showToast("Date released is required.", "error")
+    if (!maturityDateValue) return showToast("Maturity is invalid.", "error")
+    if (paymentRows.length === 0) {
+      return showToast("Unable to generate payment schedule.", "error")
+    }
+    void performSaveRegularLoan()
   }
 
   return (
@@ -303,9 +294,6 @@ export function AddRegularLoan({
             value={processingFeeRate}
             onChange={(e) => setProcessingFeeRate(e.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            Auto: 3% for 30,000 and below, 6% for 31,000 and above.
-          </p>
         </div>
 
         <div className="space-y-2">
