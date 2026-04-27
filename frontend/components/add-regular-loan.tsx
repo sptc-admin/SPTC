@@ -198,6 +198,7 @@ export function AddRegularLoan({
           payment: row.payment,
         })),
         paidDueDates: [],
+        payments: [],
       })
       showToast("Regular loan saved.", "success")
       onSaved?.()

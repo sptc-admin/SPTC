@@ -1,3 +1,5 @@
+import type { LoanScheduleRow, LoanPaymentRecord } from "@/lib/loan-types"
+
 export const DIMINISHING_SCHEDULE_FACTOR = 0.0998
 
 export type AmortRow = {
@@ -9,6 +11,11 @@ export type AmortRow = {
   balance: number
   processingFee: number
   payment: number
+}
+
+export type EffectiveScheduleRow = LoanScheduleRow & {
+  actualPayment: number | null
+  extraPrincipal: number
 }
 
 function addMonths(date: Date, months: number): Date {
@@ -93,4 +100,61 @@ export function buildDiminishingSchedule(
   }
 
   return rows
+}
+
+function roundHalf(value: number): number {
+  return Math.round(value)
+}
+
+export function computeEffectiveSchedule(
+  originalSchedule: LoanScheduleRow[],
+  payments: LoanPaymentRecord[] | null | undefined,
+  _interestRate: number,
+  _amountOfLoan: number
+): EffectiveScheduleRow[] {
+  if (!originalSchedule || originalSchedule.length === 0) return []
+
+  const paymentMap = new Map<string, number>()
+  for (const p of payments ?? []) {
+    paymentMap.set(p.dueDate, p.amount)
+  }
+
+  const effectiveRows: EffectiveScheduleRow[] = []
+  let pendingExtra = 0
+  let cumulativeExtra = 0
+
+  for (let i = 0; i < originalSchedule.length; i++) {
+    const orig = originalSchedule[i]
+    const actualPaid = paymentMap.get(orig.dueDate) ?? null
+
+    const extraFromPrevious = pendingExtra
+    cumulativeExtra += extraFromPrevious
+
+    let thisMonthExtra = 0
+    if (actualPaid !== null) {
+      const excessOverPayment = actualPaid - orig.payment
+      if (excessOverPayment > 0) {
+        thisMonthExtra = Math.round(excessOverPayment * 100) / 100
+      }
+    }
+
+    const newPrincipal = roundHalf(orig.principal + extraFromPrevious)
+    const newBalance = Math.max(0, roundHalf(orig.balance - cumulativeExtra))
+
+    effectiveRows.push({
+      dueDate: orig.dueDate,
+      interest: roundHalf(orig.interest),
+      principal: newPrincipal,
+      total: roundHalf(orig.interest + newPrincipal),
+      balance: newBalance,
+      processingFee: roundHalf(orig.processingFee),
+      payment: roundHalf(actualPaid !== null ? actualPaid : orig.payment),
+      actualPayment: actualPaid !== null ? roundHalf(actualPaid) : null,
+      extraPrincipal: roundHalf(extraFromPrevious),
+    })
+
+    pendingExtra = thisMonthExtra
+  }
+
+  return effectiveRows
 }

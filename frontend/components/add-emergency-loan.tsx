@@ -115,6 +115,7 @@ export function AddEmergencyLoan({ onSaved }: { onSaved?: () => void }) {
         reason: reason.trim(),
         schedule: [],
         paidDueDates: [],
+        payments: [],
         emergencySettled: false,
         emergencyPaidOn: null,
         emergencyAmountPaid: null,

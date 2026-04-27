@@ -1,5 +1,6 @@
 import type { ButawRecord } from "@/lib/butaw-types"
 import { emergencyOutstandingBalance } from "@/lib/emergency-loan"
+import { computeEffectiveSchedule } from "@/lib/loan-schedule"
 import type { Loan } from "@/lib/loan-types"
 import type { SavingsRecord } from "@/lib/savings-types"
 
@@ -19,8 +20,14 @@ export function loanOutstandingBalance(loan: Loan): number {
   if (schedule.length === 0) {
     return loan.amountOfLoan
   }
+  const effective = computeEffectiveSchedule(
+    schedule,
+    loan.payments,
+    loan.interestRate,
+    loan.amountOfLoan
+  )
   const paid = new Set(loan.paidDueDates ?? [])
-  const ordered = [...schedule].sort((a, b) =>
+  const ordered = [...effective].sort((a, b) =>
     a.dueDate.localeCompare(b.dueDate)
   )
   let i = 0

@@ -32,10 +32,14 @@ import {
   emergencyOutstandingBalance,
   emergencyTotalPayment,
 } from "@/lib/emergency-loan"
-import { DIMINISHING_SCHEDULE_FACTOR } from "@/lib/loan-schedule"
+import {
+  DIMINISHING_SCHEDULE_FACTOR,
+  computeEffectiveSchedule,
+  type EffectiveScheduleRow,
+} from "@/lib/loan-schedule"
 import { normalizeStoredProcessingFeeRate } from "@/lib/loan-processing-fee"
 import { deleteLoan, fetchLoans, updateLoan } from "@/lib/loans-api"
-import type { Loan, LoanScheduleRow } from "@/lib/loan-types"
+import type { Loan, LoanScheduleRow, LoanPaymentRecord } from "@/lib/loan-types"
 import { matchesMemberFilter } from "@/lib/member-filter"
 
 function todayYmdLocal(): string {
@@ -121,8 +125,14 @@ function outstandingBalance(loan: Loan): number {
   if (schedule.length === 0) {
     return loan.amountOfLoan
   }
+  const effective = computeEffectiveSchedule(
+    schedule,
+    loan.payments,
+    loan.interestRate,
+    loan.amountOfLoan
+  )
   const paid = new Set(loan.paidDueDates ?? [])
-  const ordered = [...schedule].sort((a, b) =>
+  const ordered = [...effective].sort((a, b) =>
     a.dueDate.localeCompare(b.dueDate)
   )
   let i = 0
@@ -212,6 +222,10 @@ export function LoansListTable({
   const [selectedIds, setSelectedIds] = React.useState<string[]>([])
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false)
   const [bulkDeletePending, setBulkDeletePending] = React.useState(false)
+  const [paymentDialogRow, setPaymentDialogRow] =
+    React.useState<EffectiveScheduleRow | null>(null)
+  const [paymentAmount, setPaymentAmount] = React.useState("")
+  const [paymentSaving, setPaymentSaving] = React.useState(false)
   const selectAllPageRef = React.useRef<HTMLInputElement>(null)
   const openedInitialLoanIdRef = React.useRef<string | null>(null)
   const [currentPage, setCurrentPage] = React.useState(1)
@@ -279,25 +293,104 @@ export function LoansListTable({
     if (!viewLoan) setFullPaymentConfirmOpen(false)
   }, [viewLoan])
 
-  const viewTotals = viewLoan ? scheduleTotals(viewLoan.schedule ?? []) : null
+  const effectiveSchedule = React.useMemo(() => {
+    if (!viewLoan || viewLoan.loanType === "emergency") return []
+    return computeEffectiveSchedule(
+      viewLoan.schedule ?? [],
+      viewLoan.payments,
+      viewLoan.interestRate,
+      viewLoan.amountOfLoan
+    )
+  }, [viewLoan])
+
+  const viewTotals = React.useMemo(() => {
+    if (!viewLoan) return null
+    if (effectiveSchedule.length > 0) {
+      return effectiveSchedule.reduce(
+        (acc, row) => ({
+          interest: acc.interest + row.interest,
+          principal: acc.principal + row.principal,
+          total: acc.total + row.total,
+          processingFee: acc.processingFee + row.processingFee,
+          payment: acc.payment + row.payment,
+        }),
+        { interest: 0, principal: 0, total: 0, processingFee: 0, payment: 0 }
+      )
+    }
+    return scheduleTotals(viewLoan.schedule ?? [])
+  }, [viewLoan, effectiveSchedule])
+
+  function openPaymentDialog(row: EffectiveScheduleRow) {
+    setPaymentDialogRow(row)
+    setPaymentAmount(row.payment.toString())
+  }
 
   async function toggleMonthPaid(dueDate: string) {
     if (!viewLoan) return
-    setTogglingDueDate(dueDate)
+    const isPaid = (viewLoan.paidDueDates ?? []).includes(dueDate)
+    if (isPaid) {
+      setTogglingDueDate(dueDate)
+      try {
+        const nextPaid = (viewLoan.paidDueDates ?? []).filter((d) => d !== dueDate)
+        const nextPayments = (viewLoan.payments ?? []).filter(
+          (p) => p.dueDate !== dueDate
+        )
+        const updated = await updateLoan(viewLoan.id, {
+          paidDueDates: nextPaid,
+          payments: nextPayments,
+        })
+        setViewLoan(updated)
+        setLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
+        onLoanUpdated?.()
+      } catch (e: unknown) {
+        const msg =
+          e instanceof Error ? e.message : "Could not update payment status."
+        showToast(msg, "error")
+      } finally {
+        setTogglingDueDate(null)
+      }
+    } else {
+      const row = effectiveSchedule.find((r) => r.dueDate === dueDate)
+      if (row) openPaymentDialog(row)
+    }
+  }
+
+  async function submitPayment() {
+    if (!viewLoan || !paymentDialogRow) return
+    const amount = parseFloat(paymentAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast("Enter a valid payment amount.", "error")
+      return
+    }
+    setPaymentSaving(true)
     try {
-      const current = viewLoan.paidDueDates ?? []
-      const next = current.includes(dueDate)
-        ? current.filter((d) => d !== dueDate)
-        : [...current, dueDate].sort()
-      const updated = await updateLoan(viewLoan.id, { paidDueDates: next })
+      const dueDate = paymentDialogRow.dueDate
+      const existingPayments = viewLoan.payments ?? []
+      const newPayments: LoanPaymentRecord[] = [
+        ...existingPayments.filter((p) => p.dueDate !== dueDate),
+        { dueDate, amount: Math.round(amount) },
+      ].sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+
+      const existingPaid = viewLoan.paidDueDates ?? []
+      const newPaid = existingPaid.includes(dueDate)
+        ? existingPaid
+        : [...existingPaid, dueDate].sort()
+
+      const updated = await updateLoan(viewLoan.id, {
+        paidDueDates: newPaid,
+        payments: newPayments,
+      })
       setViewLoan(updated)
+      setLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
       onLoanUpdated?.()
+      setPaymentDialogRow(null)
+      showToast("Payment recorded.", "success")
     } catch (e: unknown) {
       const msg =
-        e instanceof Error ? e.message : "Could not update payment status."
+        e instanceof Error ? e.message : "Could not record payment."
       showToast(msg, "error")
     } finally {
-      setTogglingDueDate(null)
+      setPaymentSaving(false)
     }
   }
 
@@ -1060,11 +1153,12 @@ export function LoansListTable({
                     <td className="px-3 py-2">—</td>
                     <td className="px-3 py-2 text-right">—</td>
                   </tr>
-                  {(viewLoan.schedule ?? []).map((row, index) => {
+                  {effectiveSchedule.map((row, index) => {
                     const paid = (viewLoan.paidDueDates ?? []).includes(
                       row.dueDate
                     )
                     const busy = togglingDueDate === row.dueDate
+                    const hasOverpay = row.extraPrincipal > 0
                     return (
                     <tr
                       key={`${row.dueDate}-${index}`}
@@ -1076,6 +1170,11 @@ export function LoansListTable({
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {formatCurrency(row.principal)}
+                        {hasOverpay && (
+                          <span className="ml-1 text-xs text-green-700">
+                            (+{formatCurrency(row.extraPrincipal)})
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {formatCurrency(row.total)}
@@ -1088,6 +1187,11 @@ export function LoansListTable({
                       </td>
                       <td className="px-3 py-2 tabular-nums">
                         {formatCurrency(row.payment)}
+                        {row.actualPayment !== null && row.actualPayment !== row.payment && (
+                          <span className="ml-1 text-xs text-blue-700">
+                            (actual: {formatCurrency(row.actualPayment)})
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Button
@@ -1407,6 +1511,72 @@ export function LoansListTable({
               onClick={() => void confirmBulkDeleteLoans()}
             >
               {bulkDeletePending ? "Deleting..." : "Delete all selected"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(paymentDialogRow)}
+        onOpenChange={(open) => {
+          if (!open) setPaymentDialogRow(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              {paymentDialogRow ? (
+                <>
+                  Due date:{" "}
+                  <span className="font-medium text-foreground">
+                    {dueLabelLong(paymentDialogRow.dueDate)}
+                  </span>
+                  <br />
+                  Scheduled payment:{" "}
+                  <span className="font-medium text-foreground">
+                    {formatCurrency(paymentDialogRow.payment)}
+                  </span>
+                  <br />
+                  <span className="mt-1 block text-xs">
+                    Enter the actual payment. If higher than scheduled, excess goes
+                    to principal (lowers balance).
+                  </span>
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="payment-amount">Payment Amount</Label>
+            <Input
+              id="payment-amount"
+              type="number"
+              min="0"
+              step="1"
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              placeholder="Enter payment amount"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPaymentDialogRow(null)}
+              disabled={paymentSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={paymentSaving}
+              onClick={() => void submitPayment()}
+            >
+              {paymentSaving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Save Payment"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

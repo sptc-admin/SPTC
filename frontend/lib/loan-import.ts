@@ -505,6 +505,7 @@ export function parseRegularLoanImportRows(
       maturityDate,
       schedule,
       paidDueDates: [],
+      payments: [],
     }
     if (reasonRaw) {
       payload.reason = reasonRaw
@@ -717,6 +718,7 @@ export function parseEmergencyLoanImportRows(
       reason: reasonRaw,
       schedule: [],
       paidDueDates: [],
+      payments: [],
       emergencySettled: false,
       emergencyPaidOn: null,
       emergencyAmountPaid: null,

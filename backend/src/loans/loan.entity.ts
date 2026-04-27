@@ -16,6 +16,11 @@ export type LoanScheduleRow = {
   payment: number;
 };
 
+export type LoanPaymentRecord = {
+  dueDate: string;
+  amount: number;
+};
+
 @Entity('loans')
 export class Loan {
   @PrimaryGeneratedColumn('uuid')
@@ -72,6 +77,10 @@ export class Loan {
   /** Due dates (YYYY-MM-DD) matching schedule rows that have been paid. */
   @Column({ type: 'json', nullable: true })
   paidDueDates: string[] | null;
+
+  /** Actual payments made per due date (may differ from scheduled amounts). */
+  @Column({ type: 'json', nullable: true })
+  payments: LoanPaymentRecord[] | null;
 
   /** Emergency loan: full principal + interest paid; no further amounts due. */
   @Column({ type: 'boolean', default: false })

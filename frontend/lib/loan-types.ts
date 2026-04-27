@@ -8,6 +8,11 @@ export type LoanScheduleRow = {
   payment: number
 }
 
+export type LoanPaymentRecord = {
+  dueDate: string
+  amount: number
+}
+
 export type Loan = {
   id: string
   memberId: string
@@ -27,6 +32,7 @@ export type Loan = {
   reason?: string | null
   schedule: LoanScheduleRow[]
   paidDueDates?: string[] | null
+  payments?: LoanPaymentRecord[] | null
   emergencySettled?: boolean
   emergencyPaidOn?: string | null
   emergencyAmountPaid?: number | null
