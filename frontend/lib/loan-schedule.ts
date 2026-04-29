@@ -57,16 +57,16 @@ export function buildDiminishingSchedule(
   const fixedTotal = roundUpToNearest5(
     (loanAmount * (1 + DIMINISHING_SCHEDULE_FACTOR)) / months
   )
-  const cents = (n: number) => Math.round(n * 100) / 100
-  const processingEach = cents(totalProcessingFee / months)
+  const round = (n: number) => Math.round(n)
+  const processingEach = round(totalProcessingFee / months)
 
   const rows: AmortRow[] = []
-  let balance = cents(loanAmount)
+  let balance = round(loanAmount)
 
   for (let i = 0; i < months; i++) {
     const due = addMonths(baseDate, i + 1)
     const isLast = i === months - 1
-    const interest = cents(balance * monthlyRate)
+    const interest = round(balance * monthlyRate)
 
     let total: number
     let principalPaid: number
@@ -74,16 +74,16 @@ export function buildDiminishingSchedule(
 
     if (isLast) {
       principalPaid = balance
-      total = cents(principalPaid + interest)
+      total = round(principalPaid + interest)
       endingBalance = 0
     } else {
       total = fixedTotal
-      principalPaid = cents(total - interest)
-      endingBalance = cents(balance - principalPaid)
+      principalPaid = round(total - interest)
+      endingBalance = round(balance - principalPaid)
     }
 
     const processingFee = processingEach
-    const payment = cents(total + processingFee)
+    const payment = round(total + processingFee)
 
     rows.push({
       dueDate: toYmd(due),
