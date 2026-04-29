@@ -109,8 +109,8 @@ function roundHalf(value: number): number {
 export function computeEffectiveSchedule(
   originalSchedule: LoanScheduleRow[],
   payments: LoanPaymentRecord[] | null | undefined,
-  _interestRate: number,
-  _amountOfLoan: number
+  interestRate: number,
+  amountOfLoan: number
 ): EffectiveScheduleRow[] {
   if (!originalSchedule || originalSchedule.length === 0) return []
 
@@ -119,41 +119,62 @@ export function computeEffectiveSchedule(
     paymentMap.set(p.dueDate, p.amount)
   }
 
-  const effectiveRows: EffectiveScheduleRow[] = []
-  let pendingExtra = 0
-  let cumulativeExtra = 0
+  const months = originalSchedule.length
+  const monthlyRate = interestRate / 100
+  const totalProcessingFee = originalSchedule.reduce(
+    (sum, r) => sum + r.processingFee,
+    0
+  )
+  const processingEach = roundHalf(totalProcessingFee / months)
+  const fixedTotal = originalSchedule[0]?.total ?? 0
 
-  for (let i = 0; i < originalSchedule.length; i++) {
+  const effectiveRows: EffectiveScheduleRow[] = []
+  let balance = roundHalf(amountOfLoan)
+
+  for (let i = 0; i < months; i++) {
     const orig = originalSchedule[i]
     const actualPaid = paymentMap.get(orig.dueDate) ?? null
+    const isLast = i === months - 1
 
-    const extraFromPrevious = pendingExtra
-    cumulativeExtra += extraFromPrevious
+    const interest = roundHalf(balance * monthlyRate)
 
-    let thisMonthExtra = 0
+    let total: number
+    let principal: number
+
+    if (isLast) {
+      principal = balance
+      total = roundHalf(principal + interest)
+    } else {
+      total = fixedTotal
+      principal = roundHalf(total - interest)
+    }
+
+    let extraPrincipal = 0
     if (actualPaid !== null) {
-      const excessOverPayment = actualPaid - orig.payment
-      if (excessOverPayment > 0) {
-        thisMonthExtra = Math.round(excessOverPayment * 100) / 100
+      const scheduledPayment = roundHalf(total + processingEach)
+      const excess = actualPaid - scheduledPayment
+      if (excess > 0) {
+        extraPrincipal = roundHalf(excess)
+        principal = roundHalf(principal + extraPrincipal)
       }
     }
 
-    const newPrincipal = roundHalf(orig.principal + extraFromPrevious)
-    const newBalance = Math.max(0, roundHalf(orig.balance - cumulativeExtra))
+    const endingBalance = Math.max(0, roundHalf(balance - principal))
+    const payment = roundHalf(total + processingEach)
 
     effectiveRows.push({
       dueDate: orig.dueDate,
-      interest: roundHalf(orig.interest),
-      principal: newPrincipal,
-      total: roundHalf(orig.interest + newPrincipal),
-      balance: newBalance,
-      processingFee: roundHalf(orig.processingFee),
-      payment: roundHalf(actualPaid !== null ? actualPaid : orig.payment),
+      interest,
+      principal,
+      total: roundHalf(interest + principal),
+      balance: endingBalance,
+      processingFee: processingEach,
+      payment: actualPaid !== null ? roundHalf(actualPaid) : payment,
       actualPayment: actualPaid !== null ? roundHalf(actualPaid) : null,
-      extraPrincipal: roundHalf(extraFromPrevious),
+      extraPrincipal,
     })
 
-    pendingExtra = thisMonthExtra
+    balance = endingBalance
   }
 
   return effectiveRows
