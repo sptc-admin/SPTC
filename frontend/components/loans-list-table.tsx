@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  FileSpreadsheet,
   Loader2,
   Trash2,
 } from "lucide-react"
@@ -41,6 +42,11 @@ import { normalizeStoredProcessingFeeRate } from "@/lib/loan-processing-fee"
 import { deleteLoan, fetchLoans, updateLoan } from "@/lib/loans-api"
 import type { Loan, LoanScheduleRow, LoanPaymentRecord } from "@/lib/loan-types"
 import { matchesMemberFilter } from "@/lib/member-filter"
+import {
+  buildXlsxArrayBufferFromSections,
+  triggerXlsxDownload,
+  type CsvExportSection,
+} from "@/lib/csv-export"
 
 function todayYmdLocal(): string {
   const d = new Date()
@@ -187,6 +193,113 @@ function emergencyAmountPaidColumn(loan: Loan): string {
 function isLoanPaidInFull(loan: Loan): boolean {
   if (loan.loanType === "emergency") return Boolean(loan.emergencySettled)
   return outstandingBalance(loan) <= 0
+}
+
+function exportLoanToExcel(loan: Loan): void {
+  const sections: CsvExportSection[] = []
+
+  if (loan.loanType === "emergency") {
+    sections.push({
+      title: "Emergency Loan Details",
+      kind: "keyValues",
+      pairs: [
+        ["Body Number", loan.bodyNumber],
+        ["Member Name", loan.memberName],
+        ["Amount", loan.amountOfLoan],
+        ["Date Released", formatYmdDisplay(loan.dateReleased)],
+        ["Reason", loan.reason ?? ""],
+        ["Status", loan.emergencySettled ? "Paid" : "Unpaid"],
+        ["Paid On", loan.emergencyPaidOn ? formatYmdDisplay(loan.emergencyPaidOn) : ""],
+        ["Amount Paid", loan.emergencyAmountPaid ?? ""],
+      ],
+    })
+  } else {
+    const feeRate = normalizeStoredProcessingFeeRate(loan.processingFeeRate)
+    sections.push({
+      title: "Loan Details",
+      kind: "keyValues",
+      pairs: [
+        ["Body Number", loan.bodyNumber],
+        ["Member Name", loan.memberName],
+        ["Loan Type", loanTypeLabel(loan)],
+        ["Amount of Loan", loan.amountOfLoan],
+        ["Interest Rate (Monthly)", `${loan.interestRate}%`],
+        ["Processing Fee Rate", `${feeRate}%`],
+        ["Processing Fee Total", loan.amountOfLoan * (feeRate / 100)],
+        ["Capital Build-up", loan.capitalBuildUpAmount],
+        ["Insurance", loan.insuranceAmount],
+        ["Amount Released", loan.amountRelease],
+        ["Terms", termLabel(loan)],
+        ["Date Released", formatYmdDisplay(loan.dateReleased)],
+        ["Maturity Date", formatYmdDisplay(loan.maturityDate)],
+        ["Reason", loan.reason ?? ""],
+      ],
+    })
+
+    const schedule = loan.schedule ?? []
+    if (schedule.length > 0) {
+      const effective = computeEffectiveSchedule(
+        schedule,
+        loan.payments,
+        loan.interestRate,
+        loan.amountOfLoan
+      )
+      const paid = new Set(loan.paidDueDates ?? [])
+
+      const scheduleRows = effective.map((row) => [
+        formatYmdDisplay(row.dueDate),
+        row.interest,
+        row.principal,
+        row.total,
+        row.balance,
+        row.processingFee,
+        row.payment,
+        paid.has(row.dueDate) ? "Yes" : "No",
+      ])
+
+      const totals = effective.reduce(
+        (acc, r) => ({
+          interest: acc.interest + r.interest,
+          principal: acc.principal + r.principal,
+          total: acc.total + r.total,
+          processingFee: acc.processingFee + r.processingFee,
+          payment: acc.payment + r.payment,
+        }),
+        { interest: 0, principal: 0, total: 0, processingFee: 0, payment: 0 }
+      )
+
+      scheduleRows.push([
+        "TOTALS",
+        totals.interest,
+        totals.principal,
+        totals.total,
+        "",
+        totals.processingFee,
+        totals.payment,
+        "",
+      ])
+
+      sections.push({
+        title: "Payment Schedule",
+        kind: "table",
+        headers: [
+          "Due Date",
+          "Interest",
+          "Principal",
+          "Total",
+          "Balance",
+          "Processing Fee",
+          "Payment",
+          "Paid",
+        ],
+        rows: scheduleRows,
+      })
+    }
+  }
+
+  const buf = buildXlsxArrayBufferFromSections(sections)
+  const filename = `loan-${loan.bodyNumber}-${loan.memberName.replace(/\s+/g, "-")}`
+  triggerXlsxDownload(filename, buf)
 }
 
 export function LoansListTable({
@@ -847,6 +960,16 @@ export function LoansListTable({
                     >
                       <Eye className="size-4" />
                       View
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={() => exportLoanToExcel(loan)}
+                    >
+                      <FileSpreadsheet className="size-4" />
+                      Export
                     </Button>
                     {loan.loanType === "emergency" ? (
                       <Button
