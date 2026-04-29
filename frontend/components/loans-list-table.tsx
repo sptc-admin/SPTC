@@ -8,6 +8,7 @@ import {
   Eye,
   FileSpreadsheet,
   Loader2,
+  MoreHorizontal,
   Trash2,
 } from "lucide-react"
 
@@ -21,6 +22,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SearchableSelect } from "@/components/ui/searchable-select"
@@ -950,68 +957,50 @@ export function LoansListTable({
                   </td>
                 ) : null}
                 <td className={cn("py-3 pl-3 text-right", rowPaid && cellGreen)}>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() => setViewLoan(loan)}
-                    >
-                      <Eye className="size-4" />
-                      View
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1"
-                      onClick={() => exportLoanToExcel(loan)}
-                    >
-                      <FileSpreadsheet className="size-4" />
-                      Export
-                    </Button>
-                    {loan.loanType === "emergency" ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <Button
                         type="button"
-                        variant={loan.emergencySettled ? "outline" : "default"}
+                        variant="outline"
                         size="sm"
-                        className={
-                          loan.emergencySettled
-                            ? "gap-1 border-green-600 text-green-800 hover:bg-green-50"
-                            : "gap-1 bg-black text-white hover:bg-black/90"
-                        }
-                        disabled={emergencySettlingId === loan.id}
-                        onClick={() =>
-                          loan.emergencySettled
-                            ? setEmergencySettled(loan, false)
-                            : openEmergencyPayDateDialog(loan)
-                        }
+                        className="size-8 p-0"
                       >
-                        {emergencySettlingId === loan.id ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : loan.emergencySettled ? (
-                          <>
-                            <CheckCircle2 className="size-4" />
-                            Paid
-                          </>
-                        ) : (
-                          "Mark paid"
-                        )}
+                        <MoreHorizontal className="size-4" />
+                        <span className="sr-only">Actions</span>
                       </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      disabled={deletePending || bulkDeletePending}
-                      onClick={() => setDeleteTarget(loan)}
-                    >
-                      <Trash2 className="size-4" />
-                      Delete
-                    </Button>
-                  </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-white dark:bg-zinc-900">
+                      <DropdownMenuItem onClick={() => setViewLoan(loan)}>
+                        <Eye className="size-4" />
+                        View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportLoanToExcel(loan)}>
+                        <FileSpreadsheet className="size-4" />
+                        Export
+                      </DropdownMenuItem>
+                      {loan.loanType === "emergency" && (
+                        <DropdownMenuItem
+                          disabled={emergencySettlingId === loan.id}
+                          onClick={() =>
+                            loan.emergencySettled
+                              ? setEmergencySettled(loan, false)
+                              : openEmergencyPayDateDialog(loan)
+                          }
+                        >
+                          <CheckCircle2 className="size-4" />
+                          {loan.emergencySettled ? "Unmark paid" : "Mark paid"}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        disabled={deletePending || bulkDeletePending}
+                        onClick={() => setDeleteTarget(loan)}
+                      >
+                        <Trash2 className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </td>
               </tr>
               )
