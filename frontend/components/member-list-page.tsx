@@ -1505,44 +1505,43 @@ export function MemberListPage() {
               </div>
             </div>
 
-            <Separator />
-
-            <div>
-              <h3 className="text-sm font-semibold">Financial records</h3>
-              <MemberFinancialRecordsList
-                memberId={editingId}
-                loans={loans}
-                savingsRecords={savingsRecords}
-                butawRecords={butawRecords}
-                carriedShareCapital={
-                  editingId
-                    ? (members.find((m) => m.id === editingId)?.financials
-                        .shareCapital ?? 0)
-                    : undefined
-                }
-                financialRecordsAfterIso={maxLipatanTransferredAt(
-                  editingId
-                    ? members.find((m) => m.id === editingId)?.lipatanHistory
-                    : undefined
-                )}
-                onNavigateFinancialRecords={(section, loanId) => {
-                  if (section === "savings") {
-                    router.push("/financial-records?tab=savings")
-                    return
-                  }
-                  if (section === "butaw") {
-                    router.push("/financial-records?tab=butaw")
-                    return
-                  }
-                  const params = new URLSearchParams({
-                    tab: "loan",
-                    loanType: section,
-                  })
-                  if (loanId) params.set("loanId", loanId)
-                  router.push(`/financial-records?${params.toString()}`)
-                }}
-              />
-            </div>
+            {editingId ? (
+              <>
+                <Separator />
+                <div>
+                  <h3 className="text-sm font-semibold">Financial records</h3>
+                  <MemberFinancialRecordsList
+                    memberId={editingId}
+                    loans={loans}
+                    savingsRecords={savingsRecords}
+                    butawRecords={butawRecords}
+                    carriedShareCapital={
+                      members.find((m) => m.id === editingId)?.financials
+                        .shareCapital ?? 0
+                    }
+                    financialRecordsAfterIso={maxLipatanTransferredAt(
+                      members.find((m) => m.id === editingId)?.lipatanHistory
+                    )}
+                    onNavigateFinancialRecords={(section, loanId) => {
+                      if (section === "savings") {
+                        router.push("/financial-records?tab=savings")
+                        return
+                      }
+                      if (section === "butaw") {
+                        router.push("/financial-records?tab=butaw")
+                        return
+                      }
+                      const params = new URLSearchParams({
+                        tab: "loan",
+                        loanType: section,
+                      })
+                      if (loanId) params.set("loanId", loanId)
+                      router.push(`/financial-records?${params.toString()}`)
+                    }}
+                  />
+                </div>
+              </>
+            ) : null}
 
             <div className="mt-auto flex flex-col-reverse gap-2 pt-4 sm:flex-row sm:justify-end">
               <Button
