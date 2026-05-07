@@ -71,18 +71,22 @@ export class DriversService {
   }
 
   async create(data: CreateDriverInput): Promise<Driver> {
-    const bodyFmt = getBodyNumberFormatError(data.bodyNumber);
+    const rawBody =
+      typeof data.bodyNumber === 'string' ? data.bodyNumber.trim() : '';
+    const bodyFmt = rawBody ? getBodyNumberFormatError(data.bodyNumber) : null;
     if (bodyFmt) throw new BadRequestException(bodyFmt);
     const bodyNumber = normalizeBodyNumber(data.bodyNumber);
     const precinct =
       typeof data.precinctNumber === 'string' ? data.precinctNumber.trim() : '';
-    if (!precinct) {
-      throw new BadRequestException('Precinct number is required.');
+    if (bodyNumber) {
+      await this.assertBodyNumberMatchesMember(bodyNumber);
     }
-    await this.assertBodyNumberMatchesMember(bodyNumber);
-    const nameErr = getMemberFullNameFormatError(data.fullName);
+    const nameParts = normalizeMemberFullNameParts(data.fullName ?? {});
+    const nameErr =
+      nameParts.first && nameParts.last
+        ? getMemberFullNameFormatError(data.fullName)
+        : null;
     if (nameErr) throw new BadRequestException(nameErr);
-    const nameParts = normalizeMemberFullNameParts(data.fullName);
     const entity = this.driversRepository.create({
       ...data,
       bodyNumber,
@@ -95,25 +99,31 @@ export class DriversService {
   async update(id: string, data: UpdateDriverInput): Promise<Driver> {
     const driver = await this.findOne(id);
     if (data.bodyNumber !== undefined) {
-      const bodyFmt = getBodyNumberFormatError(data.bodyNumber);
+      const rawBody =
+        typeof data.bodyNumber === 'string' ? data.bodyNumber.trim() : '';
+      const bodyFmt = rawBody ? getBodyNumberFormatError(data.bodyNumber) : null;
       if (bodyFmt) throw new BadRequestException(bodyFmt);
       const bodyNumber = normalizeBodyNumber(data.bodyNumber);
-      await this.assertBodyNumberMatchesMember(bodyNumber);
+      if (bodyNumber) {
+        await this.assertBodyNumberMatchesMember(bodyNumber);
+      }
       driver.bodyNumber = bodyNumber;
     }
     if (data.precinctNumber !== undefined) {
       const p =
         typeof data.precinctNumber === 'string' ? data.precinctNumber.trim() : '';
-      if (!p) throw new BadRequestException('Precinct number is required.');
       driver.precinctNumber = p;
     }
     const next: UpdateDriverInput = { ...data };
     delete (next as { bodyNumber?: string }).bodyNumber;
     delete (next as { precinctNumber?: string }).precinctNumber;
     if (data.fullName !== undefined) {
-      const nameErr = getMemberFullNameFormatError(data.fullName);
-      if (nameErr) throw new BadRequestException(nameErr);
       const nameParts = normalizeMemberFullNameParts(data.fullName);
+      const nameErr =
+        nameParts.first && nameParts.last
+          ? getMemberFullNameFormatError(data.fullName)
+          : null;
+      if (nameErr) throw new BadRequestException(nameErr);
       next.fullName = capitalizeFullName(nameParts);
     }
     Object.assign(driver, next);

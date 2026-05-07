@@ -137,6 +137,23 @@ const selectClass = cn(
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm disabled:cursor-not-allowed"
 )
 
+const requiredWarningClass = "border-amber-500 focus-visible:ring-amber-500"
+
+function RequiredFieldWarning({
+  show,
+  message = "This field is required.",
+}: {
+  show: boolean
+  message?: string
+}) {
+  if (!show) return null
+  return (
+    <p className="text-xs font-medium text-amber-800" role="alert">
+      {message}
+    </p>
+  )
+}
+
 function capitalizeFirstLetter(str: string): string {
   if (!str) return str
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
@@ -306,6 +323,8 @@ export function MemberListPage() {
   const [saveConfirmOpen, setSaveConfirmOpen] = React.useState(false)
   const [pendingSavePayload, setPendingSavePayload] =
     React.useState<MemberCreatePayload | null>(null)
+  const [pendingMissingRequiredFields, setPendingMissingRequiredFields] =
+    React.useState<string[]>([])
   const [deleteTarget, setDeleteTarget] = React.useState<Member | null>(null)
   const [deletePending, setDeletePending] = React.useState(false)
   const [viewMember, setViewMember] = React.useState<Member | null>(null)
@@ -333,6 +352,8 @@ export function MemberListPage() {
     React.useState<string>(DEFAULT_PROFILE_IMAGE)
   const [financialsDisplay, setFinancialsDisplay] =
     React.useState<MemberFinancials>(STATIC_MEMBER_FINANCIALS)
+  const [showRequiredWarnings, setShowRequiredWarnings] =
+    React.useState(false)
 
   const [provinces, setProvinces] = React.useState<AddressOption[]>([])
   const [cities, setCities] = React.useState<AddressOption[]>([])
@@ -643,6 +664,8 @@ export function MemberListPage() {
   }, [address.city, cities, showToast])
 
   function openCreate() {
+    setShowRequiredWarnings(false)
+    setPendingMissingRequiredFields([])
     setEditingId(null)
     setBodyNumber("")
     setPrecinctNumber("")
@@ -657,6 +680,8 @@ export function MemberListPage() {
   }
 
   function openEdit(m: Member) {
+    setShowRequiredWarnings(false)
+    setPendingMissingRequiredFields([])
     setEditingId(m.id)
     setBodyNumber(m.bodyNumber)
     setPrecinctNumber(m.precinctNumber)
@@ -694,19 +719,31 @@ export function MemberListPage() {
     const basePayload = pendingSavePayload
     const id = editingId
     if (!basePayload) return
+    const missingFields = pendingMissingRequiredFields
     setSavePending(true)
     try {
       if (id) {
         const updated = await updateMember(id, basePayload)
         setMembers((prev) => prev.map((m) => (m.id === id ? updated : m)))
-        showToast("Member updated", "success")
+        showToast(
+          missingFields.length
+            ? `Member updated. Missing fields: ${missingFields.join(", ")}.`
+            : "Member updated",
+          missingFields.length ? "warning" : "success"
+        )
       } else {
         const created = await createMember(basePayload)
         setMembers((prev) => [created, ...prev])
-        showToast("Member saved", "success")
+        showToast(
+          missingFields.length
+            ? `Member saved. Missing fields: ${missingFields.join(", ")}.`
+            : "Member saved",
+          missingFields.length ? "warning" : "success"
+        )
       }
       setSaveConfirmOpen(false)
       setPendingSavePayload(null)
+      setPendingMissingRequiredFields([])
       setSheetOpen(false)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Save failed."
@@ -718,14 +755,32 @@ export function MemberListPage() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setShowRequiredWarnings(true)
 
-    const bodyFmt = getBodyNumberFormatError(bodyNumber)
+    const missingFields = [
+      !bodyNumber.trim() && "Body / Prangkisa number",
+      !precinctNumber.trim() && "Precinct number",
+      !normalizeNamePart(fullName.first) && "First name",
+      !normalizeNamePart(fullName.last) && "Last name",
+      !birthday && "Birthday",
+      !address.province && "Province",
+      !address.city && "City / municipality",
+      !address.barangay && "Barangay",
+      !address.line.trim() && "Street / unit / landmarks",
+      !normalizePhMobile10(contactMobile10) && "Mobile number",
+      !normalizeTinDigits(tinDigits) && "TIN",
+    ].filter(Boolean) as string[]
+
+    const bodyFmt = bodyNumber.trim()
+      ? getBodyNumberFormatError(bodyNumber)
+      : null
     if (bodyFmt) {
       showToast(bodyFmt, "error")
       return
     }
     const bn = normalizeBodyNumber(bodyNumber)
     if (
+      bn &&
       members.some(
         (m) =>
           m.id !== editingId &&
@@ -735,11 +790,10 @@ export function MemberListPage() {
       showToast("This Body # is already used by another member.", "error")
       return
     }
-    if (!precinctNumber.trim()) {
-      showToast("Precinct number is required.", "error")
-      return
-    }
-    const nameErr = getMemberFullNameFormatError(fullName)
+    const nameErr =
+      normalizeNamePart(fullName.first) && normalizeNamePart(fullName.last)
+        ? getMemberFullNameFormatError(fullName)
+        : null
     if (nameErr) {
       showToast(nameErr, "error")
       return
@@ -750,29 +804,13 @@ export function MemberListPage() {
       last: normalizeNamePart(fullName.last),
       suffix: normalizeNamePart(fullName.suffix),
     }
-    if (!birthday) {
-      showToast("Birthday is required.", "error")
-      return
-    }
-    const age = computeAgeFromBirthDate(birthday)
-    if (age === null || age < 0) {
+    const age = birthday ? computeAgeFromBirthDate(birthday) : null
+    if (birthday && age === null) {
       showToast("Enter a valid birthday.", "error")
       return
     }
-    if (
-      !address.province ||
-      !address.city ||
-      !address.barangay ||
-      !address.line.trim()
-    ) {
-      showToast(
-        "Complete province, city, barangay, and address line.",
-        "error"
-      )
-      return
-    }
     const mobile = normalizePhMobile10(contactMobile10)
-    if (!isValidPhMobile10(mobile)) {
+    if (mobile && !isValidPhMobile10(mobile)) {
       showToast(
         "Enter a valid PH mobile number (10 digits starting with 9).",
         "error"
@@ -780,7 +818,7 @@ export function MemberListPage() {
       return
     }
     const tin = normalizeTinDigits(tinDigits)
-    if (!isValidTin12(tin)) {
+    if (tin && !isValidTin12(tin)) {
       showToast("TIN must be 12 digits.", "error")
       return
     }
@@ -801,6 +839,11 @@ export function MemberListPage() {
       tinDigits: tin,
       profileImageSrc,
       financials,
+    }
+    setShowRequiredWarnings(missingFields.length > 0)
+    setPendingMissingRequiredFields(missingFields)
+    if (missingFields.length) {
+      showToast(`Missing fields: ${missingFields.join(", ")}.`, "warning")
     }
     setPendingSavePayload(basePayload)
     setSaveConfirmOpen(true)
@@ -1188,8 +1231,10 @@ export function MemberListPage() {
         onOpenChange={(open) => {
           setSheetOpen(open)
           if (!open) {
+            setShowRequiredWarnings(false)
             setSaveConfirmOpen(false)
             setPendingSavePayload(null)
+            setPendingMissingRequiredFields([])
           }
         }}
       >
@@ -1237,6 +1282,15 @@ export function MemberListPage() {
                     onChange={(e) => setBodyNumber(e.target.value)}
                     placeholder="Same number for body and prangkisa"
                     autoComplete="off"
+                    className={cn(
+                      showRequiredWarnings &&
+                        !bodyNumber.trim() &&
+                        requiredWarningClass
+                    )}
+                  />
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !bodyNumber.trim()}
+                    message="Body / Prangkisa number is required."
                   />
                 </div>
                 <div className="space-y-2">
@@ -1247,6 +1301,15 @@ export function MemberListPage() {
                     onChange={(e) => setPrecinctNumber(e.target.value)}
                     placeholder="Precinct number"
                     autoComplete="off"
+                    className={cn(
+                      showRequiredWarnings &&
+                        !precinctNumber.trim() &&
+                        requiredWarningClass
+                    )}
+                  />
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !precinctNumber.trim()}
+                    message="Precinct number is required."
                   />
                 </div>
               </div>
@@ -1266,6 +1329,18 @@ export function MemberListPage() {
                       setFullName((n) => ({ ...n, first: e.target.value }))
                     }
                     autoComplete="given-name"
+                    className={cn(
+                      showRequiredWarnings &&
+                        !normalizeNamePart(fullName.first) &&
+                        requiredWarningClass
+                    )}
+                  />
+                  <RequiredFieldWarning
+                    show={
+                      showRequiredWarnings &&
+                      !normalizeNamePart(fullName.first)
+                    }
+                    message="First name is required."
                   />
                 </div>
                 <div className="space-y-2">
@@ -1288,6 +1363,17 @@ export function MemberListPage() {
                       setFullName((n) => ({ ...n, last: e.target.value }))
                     }
                     autoComplete="family-name"
+                    className={cn(
+                      showRequiredWarnings &&
+                        !normalizeNamePart(fullName.last) &&
+                        requiredWarningClass
+                    )}
+                  />
+                  <RequiredFieldWarning
+                    show={
+                      showRequiredWarnings && !normalizeNamePart(fullName.last)
+                    }
+                    message="Last name is required."
                   />
                 </div>
                 <div className="space-y-2">
@@ -1323,7 +1409,10 @@ export function MemberListPage() {
                     type="date"
                     value={birthday}
                     onChange={(e) => setBirthday(e.target.value)}
-                    className="cursor-pointer [color-scheme:light]"
+                    className={cn(
+                      "cursor-pointer [color-scheme:light]",
+                      showRequiredWarnings && !birthday && requiredWarningClass
+                    )}
                     onPointerDown={(e) => {
                       const el = e.currentTarget
                       if (typeof el.showPicker === "function") {
@@ -1346,6 +1435,10 @@ export function MemberListPage() {
                         }
                       }
                     }}
+                  />
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !birthday}
+                    message="Birthday is required."
                   />
                 </div>
                 <div className="space-y-2">
@@ -1372,7 +1465,12 @@ export function MemberListPage() {
                   <Label htmlFor="province">Province</Label>
                   <SearchableSelect
                     id="province"
-                    className={selectClass}
+                    className={cn(
+                      selectClass,
+                      showRequiredWarnings &&
+                        !address.province &&
+                        requiredWarningClass
+                    )}
                     value={address.province}
                     disabled={addressLoading && provinces.length === 0}
                     onChange={(e) => {
@@ -1393,12 +1491,21 @@ export function MemberListPage() {
                       </option>
                     ))}
                   </SearchableSelect>
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !address.province}
+                    message="Province is required."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="city">City / municipality</Label>
                   <SearchableSelect
                     id="city"
-                    className={selectClass}
+                    className={cn(
+                      selectClass,
+                      showRequiredWarnings &&
+                        !address.city &&
+                        requiredWarningClass
+                    )}
                     disabled={!address.province || addressLoading}
                     value={address.city}
                     onChange={(e) => {
@@ -1422,12 +1529,21 @@ export function MemberListPage() {
                       </option>
                     ))}
                   </SearchableSelect>
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !address.city}
+                    message="City / municipality is required."
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="barangay">Barangay</Label>
                   <SearchableSelect
                     id="barangay"
-                    className={selectClass}
+                    className={cn(
+                      selectClass,
+                      showRequiredWarnings &&
+                        !address.barangay &&
+                        requiredWarningClass
+                    )}
                     disabled={!address.city || addressLoading}
                     value={address.barangay}
                     onChange={(e) => {
@@ -1450,6 +1566,10 @@ export function MemberListPage() {
                       </option>
                     ))}
                   </SearchableSelect>
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !address.barangay}
+                    message="Barangay is required."
+                  />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label htmlFor="line">Street / unit / landmarks</Label>
@@ -1461,6 +1581,15 @@ export function MemberListPage() {
                     }
                     placeholder="House no., street, subdivision, etc."
                     autoComplete="street-address"
+                    className={cn(
+                      showRequiredWarnings &&
+                        !address.line.trim() &&
+                        requiredWarningClass
+                    )}
+                  />
+                  <RequiredFieldWarning
+                    show={showRequiredWarnings && !address.line.trim()}
+                    message="Street / unit / landmarks is required."
                   />
                 </div>
               </div>
@@ -1471,7 +1600,14 @@ export function MemberListPage() {
             <div className="grid gap-6">
               <div className="space-y-2">
                 <Label htmlFor="mobile">Mobile (PH)</Label>
-                <div className="flex items-center gap-2 rounded-md border border-input bg-transparent px-3 shadow-sm focus-within:ring-1 focus-within:ring-ring">
+                <div
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border border-input bg-transparent px-3 shadow-sm focus-within:ring-1 focus-within:ring-ring",
+                    showRequiredWarnings &&
+                      !normalizePhMobile10(contactMobile10) &&
+                      "border-amber-500 focus-within:ring-amber-500"
+                  )}
+                >
                   <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
                     +63
                   </span>
@@ -1489,6 +1625,13 @@ export function MemberListPage() {
                     }
                   />
                 </div>
+                <RequiredFieldWarning
+                  show={
+                    showRequiredWarnings &&
+                    !normalizePhMobile10(contactMobile10)
+                  }
+                  message="Mobile number is required."
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tin">Tax Identification Number</Label>
@@ -1501,6 +1644,17 @@ export function MemberListPage() {
                   onChange={(e) =>
                     setTinDigits(normalizeTinDigits(e.target.value))
                   }
+                  className={cn(
+                    showRequiredWarnings &&
+                      !normalizeTinDigits(tinDigits) &&
+                      requiredWarningClass
+                  )}
+                />
+                <RequiredFieldWarning
+                  show={
+                    showRequiredWarnings && !normalizeTinDigits(tinDigits)
+                  }
+                  message="TIN is required."
                 />
               </div>
             </div>
@@ -1985,7 +2139,10 @@ export function MemberListPage() {
         open={saveConfirmOpen}
         onOpenChange={(open) => {
           setSaveConfirmOpen(open)
-          if (!open) setPendingSavePayload(null)
+          if (!open) {
+            setPendingSavePayload(null)
+            setPendingMissingRequiredFields([])
+          }
         }}
       >
         <DialogContent className="sm:max-w-md">

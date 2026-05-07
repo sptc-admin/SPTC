@@ -146,13 +146,20 @@ export class MembersService {
   }
 
   async create(data: CreateMemberInput): Promise<Member> {
-    const fmt = getBodyNumberFormatError(data.bodyNumber);
+    const rawBody =
+      typeof data.bodyNumber === 'string' ? data.bodyNumber.trim() : '';
+    const fmt = rawBody ? getBodyNumberFormatError(data.bodyNumber) : null;
     if (fmt) throw new BadRequestException(fmt);
     const bodyNumber = normalizeBodyNumber(data.bodyNumber);
-    await this.assertBodyNumberUnique(bodyNumber, null);
-    const nameErr = getMemberFullNameFormatError(data.fullName);
+    if (bodyNumber) {
+      await this.assertBodyNumberUnique(bodyNumber, null);
+    }
+    const nameParts = normalizeMemberFullNameParts(data.fullName ?? {});
+    const nameErr =
+      nameParts.first && nameParts.last
+        ? getMemberFullNameFormatError(data.fullName)
+        : null;
     if (nameErr) throw new BadRequestException(nameErr);
-    const nameParts = normalizeMemberFullNameParts(data.fullName);
     const normalizedName = capitalizeFullName(nameParts);
     const entity = this.membersRepository.create({
       ...data,
@@ -168,10 +175,14 @@ export class MembersService {
   async update(id: string, data: UpdateMemberInput): Promise<Member> {
     const member = await this.findOne(id);
     if (data.bodyNumber !== undefined) {
-      const fmt = getBodyNumberFormatError(data.bodyNumber);
+      const rawBody =
+        typeof data.bodyNumber === 'string' ? data.bodyNumber.trim() : '';
+      const fmt = rawBody ? getBodyNumberFormatError(data.bodyNumber) : null;
       if (fmt) throw new BadRequestException(fmt);
       const bodyNumber = normalizeBodyNumber(data.bodyNumber);
-      await this.assertBodyNumberUnique(bodyNumber, id);
+      if (bodyNumber) {
+        await this.assertBodyNumberUnique(bodyNumber, id);
+      }
       member.bodyNumber = bodyNumber;
     }
     const next: Partial<Member> = { ...data };
@@ -180,9 +191,12 @@ export class MembersService {
       next.financials = normalizeFinancials(data.financials);
     }
     if (data.fullName !== undefined) {
-      const nameErr = getMemberFullNameFormatError(data.fullName);
-      if (nameErr) throw new BadRequestException(nameErr);
       const nameParts = normalizeMemberFullNameParts(data.fullName);
+      const nameErr =
+        nameParts.first && nameParts.last
+          ? getMemberFullNameFormatError(data.fullName)
+          : null;
+      if (nameErr) throw new BadRequestException(nameErr);
       next.fullName = capitalizeFullName(nameParts);
     }
     Object.assign(member, next);

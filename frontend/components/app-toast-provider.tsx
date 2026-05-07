@@ -12,7 +12,7 @@ import {
 import { AlertCircleIcon, CheckCircle2Icon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
-type ToastType = "success" | "error"
+type ToastType = "success" | "error" | "warning"
 
 type ToastState = {
   message: string
@@ -59,14 +59,26 @@ export function AppToastProvider({ children }: { children: ReactNode }) {
           variant={toast.type === "error" ? "destructive" : "default"}
           className={`fixed bottom-4 right-4 z-50 w-[calc(100%-2rem)] max-w-sm border transition-opacity duration-500 ${
             toast.visible ? "opacity-100" : "opacity-0"
-          } ${toast.type === "success" ? "border-green-200 bg-green-50 text-green-800" : ""}`}
+          } ${
+            toast.type === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : toast.type === "warning"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : ""
+          }`}
         >
           {toast.type === "success" ? (
             <CheckCircle2Icon className="h-4 w-4" />
           ) : (
             <AlertCircleIcon className="h-4 w-4" />
           )}
-          <AlertTitle>{toast.type === "success" ? "Success" : "Error"}</AlertTitle>
+          <AlertTitle>
+            {toast.type === "success"
+              ? "Success"
+              : toast.type === "warning"
+                ? "Warning"
+                : "Error"}
+          </AlertTitle>
           <AlertDescription>{toast.message}</AlertDescription>
         </Alert>
       ) : null}
