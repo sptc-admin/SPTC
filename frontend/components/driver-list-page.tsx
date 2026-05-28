@@ -1097,7 +1097,6 @@ export function DriverListPage() {
                     )}
                     value={bodyNumber}
                     onChange={(e) => setBodyNumber(e.target.value)}
-                    disabled={editingId !== null}
                   >
                     <option value="">Select body number</option>
                     {availableBodyNumbers.map((num) => (
@@ -1110,11 +1109,6 @@ export function DriverListPage() {
                     show={showRequiredWarnings && !bodyNumber.trim()}
                     message="Body number is required."
                   />
-                  {editingId && (
-                    <p className="text-xs text-muted-foreground">
-                      Body number cannot be changed when editing
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="precinctNumber">Precinct number</Label>
