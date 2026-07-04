@@ -136,12 +136,30 @@ export function computeEffectiveSchedule(
     const actualPaid = paymentMap.get(orig.dueDate) ?? null
     const isLast = i === months - 1
 
+    if (balance <= 0) {
+      effectiveRows.push({
+        dueDate: orig.dueDate,
+        interest: 0,
+        principal: 0,
+        total: 0,
+        balance: 0,
+        processingFee: 0,
+        payment: 0,
+        actualPayment: null,
+        extraPrincipal: 0,
+      })
+      continue
+    }
+
     const interest = roundHalf(balance * monthlyRate)
 
     let total: number
     let principal: number
 
-    if (isLast) {
+    const projectedPrincipal = roundHalf(fixedTotal - interest)
+    const isEffectiveLast = isLast || balance <= projectedPrincipal
+
+    if (isEffectiveLast) {
       principal = balance
       total = roundHalf(principal + interest)
     } else {
